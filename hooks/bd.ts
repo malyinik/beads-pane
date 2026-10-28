@@ -42,7 +42,7 @@ export async function fetchLoad($: EngineInterface, filter: Filter): Promise<Loa
               message:
                   "bd printed something other than a JSON list of issues.",
           }
-        : { kind: "ready", filter, issues: issues.sort(byPriority) };
+        : { kind: "ready", issues: issues.sort(byPriority) };
 }
 
 /**

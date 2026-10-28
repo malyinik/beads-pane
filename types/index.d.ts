@@ -19,17 +19,19 @@ export type Issue = {
 export type Filter = "ready" | "blocked" | "open" | "all";
 
 /**
- * What the pane knows of the session's beads database.
- * `idle` holds until the first load, `missing` means bd found no database for the session's working directory.
+ * What one read of the session's beads database came to.
+ * `missing` means bd found no database for the session's working directory.
  */
 export type Load =
-    | { kind: "idle" }
     | { kind: "missing" }
     | { kind: "error"; message: string }
-    | { kind: "ready"; filter: Filter; issues: Issue[] };
+    | { kind: "ready"; issues: Issue[] };
+
+/** The last {@link Load} of each {@link Filter}; a filter never read yet has none. */
+export type Lists = Partial<Record<Filter, Load>>;
 
 declare module "claude-code" {
     interface PluginState {
-        "beads-pane": { load: Shaped<Load>; filter: Shaped<Filter> };
+        "beads-pane": { lists: Shaped<Lists>; filter: Shaped<Filter> };
     }
 }

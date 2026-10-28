@@ -1,7 +1,7 @@
 import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register } from "claude-code";
 
-import type { Filter } from "../types";
+import type { Filter, Issue, Load } from "../types";
 import { fetchLoad } from "./bd";
 
 /** Id of the side pane, shared by `$.ui.open` and the `Pane` render hook. */
@@ -13,11 +13,11 @@ const TITLE = "Beads";
 /** Slash command that opens the pane, typed as `/beads-pane`. */
 const COMMAND = "beads-pane";
 
-/** What the pane knows of the session's beads database, kept in the session's state. */
-const load = atom(
-    { plugin: "beads-pane", key: "load" } as const,
-    { kind: "idle" },
-    { shape: "load-2" },
+/** The last read of each filter, kept in the session's state so a switch draws at once. */
+const lists = atom(
+    { plugin: "beads-pane", key: "lists" } as const,
+    {},
+    { shape: "lists-1" },
 );
 
 /** The {@link Filter} chosen in the pane, `open` until the person picks another. */
@@ -56,28 +56,59 @@ const STATUS_MARKS: Readonly<Record<string, string>> = {
     closed: "✓",
 };
 
-/** Theme colors of the priorities worth drawing attention to; the rest are drawn dim. */
+/** The colors bd itself draws priorities in; P3 and P4 are drawn as plain text. */
 const PRIORITY_COLORS: Readonly<Record<number, string>> = {
-    0: "error",
-    1: "warning",
+    0: "#F07178",
+    1: "#FF8F40",
+    2: "#E6B450",
 };
 
 /**
- * Chooses `chosen` as the pane's filter, reads its issues from bd and stores them.
- * A result that arrives after another filter was chosen is dropped, so the list never shows a filter the switch does not.
+ * Reads the issues of `which` from bd and stores them under that filter.
+ * Returns what the read came to.
  */
-async function show($: EngineInterface, chosen: Filter): Promise<void> {
+async function refresh($: EngineInterface, which: Filter): Promise<Load> {
+    const loaded = await fetchLoad($, which);
+    await update($, lists, (all) => ({ ...all, [which]: loaded }));
+
+    return loaded;
+}
+
+/**
+ * Makes `chosen` the pane's filter and reads its issues again.
+ * The list drawn meanwhile is the filter's last read, if any.
+ */
+async function choose($: EngineInterface, chosen: Filter): Promise<void> {
     await update($, filter, () => chosen);
-    const loaded = await fetchLoad($, chosen);
-    if ((await read($, filter)) === chosen) {
-        await update($, load, () => loaded);
+    await refresh($, chosen);
+}
+
+/**
+ * Reads the issues of every filter but `chosen`, one after another, so a later switch draws at once.
+ * bd runs are not started together because concurrent reads of its embedded database are slower than serial ones.
+ */
+async function refreshOthers($: EngineInterface, chosen: Filter): Promise<void> {
+    for (const one of FILTERS) {
+        if (one.filter !== chosen) {
+            await refresh($, one.filter);
+        }
     }
+}
+
+/** Width of the fixed part of a row: status mark, priority, an id of `idWidth` characters and the space before the title. */
+function prefixWidth(idWidth: number): number {
+    return "○ P0 ".length + idWidth + 1;
+}
+
+/** The type shown after a title, or nothing for a plain task. */
+function typeSuffix(issue: Issue): string {
+    return issue.issue_type === "task" ? "" : ` · ${issue.issue_type}`;
 }
 
 /**
  * Registers the `/beads-pane` command and draws the beads pane.
  * The pane opens only on the command, never unasked at session start.
- * Each run of the command reads the issues of the chosen filter from bd again.
+ * Each run of the command reads the chosen filter from bd again, then the other filters in the background.
  */
 export const register: Register = (on) => {
     on("session.start", async ($, e, next) => {
@@ -91,7 +122,10 @@ export const register: Register = (on) => {
 
     on("command.run", { command: COMMAND }, async ($) => {
         const opened = await $.ui.open({ id: PANE, title: TITLE });
-        await show($, await read($, filter));
+        const chosen = await read($, filter);
+        if ((await refresh($, chosen)).kind === "ready") {
+            void refreshOthers($, chosen);
+        }
 
         return {
             text: opened.isPlaced
@@ -102,10 +136,11 @@ export const register: Register = (on) => {
 
     on("ui.render", { component: "Pane", requestId: PANE }, async ($, e) => {
         const { Box, Button, Text } = $.ui.resolve(e);
-        const state = await read($, load);
+        const all = await read($, lists);
         const chosen = await read($, filter);
+        const state = all[chosen];
 
-        if (state.kind === "missing") {
+        if (state?.kind === "missing") {
             return (
                 <Box flexDirection="column">
                     <Text>No beads database for this folder.</Text>
@@ -116,6 +151,9 @@ export const register: Register = (on) => {
             );
         }
 
+        const width = prefixWidth(
+            state?.kind === "ready" ? Math.max(0, ...state.issues.map((one) => one.id.length)) : 0,
+        );
         const empty =
             FILTERS.find((one) => one.filter === chosen)?.empty ?? "No issues.";
 
@@ -131,39 +169,47 @@ export const register: Register = (on) => {
                                 one.filter === chosen ? "primary" : "secondary"
                             }
                             onPress={() => {
-                                void show($, one.filter);
+                                void choose($, one.filter);
                             }}
                         />
                     ))}
                 </Box>
-                {state.kind === "idle" ? (
-                    <Text dimColor>No issues loaded yet.</Text>
+                {state === undefined ? (
+                    <Text dimColor>
+                        {Object.keys(all).length === 0 ? "No issues loaded yet." : "Loading…"}
+                    </Text>
                 ) : state.kind === "error" ? (
                     <Text color="error">bd failed: {state.message}</Text>
                 ) : state.issues.length === 0 ? (
                     <Text dimColor>{empty}</Text>
                 ) : (
                     <Box flexDirection="column">
-                        {state.issues.map((issue) => (
-                            <Text dimColor={issue.status === "closed"}>
-                                {STATUS_MARKS[issue.status] ?? "?"}{" "}
-                                <Text
-                                    color={PRIORITY_COLORS[issue.priority]}
-                                    dimColor={
-                                        PRIORITY_COLORS[issue.priority] ===
-                                        undefined
-                                    }
-                                >
-                                    P{issue.priority}
-                                </Text>{" "}
-                                <Text dimColor>{issue.id}</Text> {issue.title}
-                                {issue.issue_type === "task" ? (
-                                    ""
-                                ) : (
-                                    <Text dimColor> · {issue.issue_type}</Text>
-                                )}
-                            </Text>
-                        ))}
+                        {state.issues.map((issue) => {
+                            const isClosed = issue.status === "closed";
+
+                            return (
+                                <Box key={`issue-${issue.id}`} flexDirection="row">
+                                    <Box width={width} flexShrink={0}>
+                                        <Text mono dimColor={isClosed}>
+                                            {STATUS_MARKS[issue.status] ?? "?"}{" "}
+                                            <Text
+                                                color={isClosed ? undefined : PRIORITY_COLORS[issue.priority]}
+                                                weight={issue.priority === 0 && !isClosed ? "bold" : undefined}
+                                            >
+                                                P{issue.priority}
+                                            </Text>{" "}
+                                            <Text dimColor>{issue.id}</Text>
+                                        </Text>
+                                    </Box>
+                                    <Box flexShrink={1}>
+                                        <Text dimColor={isClosed}>
+                                            {issue.title}
+                                            <Text dimColor>{typeSuffix(issue)}</Text>
+                                        </Text>
+                                    </Box>
+                                </Box>
+                            );
+                        })}
                     </Box>
                 )}
             </Box>
