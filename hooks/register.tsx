@@ -2,7 +2,7 @@ import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register, RenderSurface } from "claude-code";
 
 import type { Card, CardLoad, Filter, Issue, Load } from "../types";
-import { fetchCard, fetchLoad } from "./bd";
+import { fetchCard, fetchLoad, fetchVersion } from "./bd";
 
 /** Id of the side pane, shared by `$.ui.open` and the `Pane` render hook. */
 export const PANE = "beads";
@@ -134,6 +134,12 @@ async function refreshOthers(
     }
 }
 
+/** Reads the card of issue `id` from bd and stores it under that id. */
+async function refreshCard($: EngineInterface, id: string): Promise<void> {
+    const loaded = await fetchCard($, id);
+    await update($, cards, (all) => ({ ...all, [id]: loaded }));
+}
+
 /**
  * Opens the card of issue `id` under its row and reads it again, or closes it when it is the open one.
  * Only one card is open at a time.
@@ -143,10 +149,78 @@ async function toggle($: EngineInterface, id: string): Promise<void> {
     const opened = (await read($, expanded)) === id ? null : id;
     await update($, expanded, () => opened);
     if (opened !== null) {
-        const loaded = await fetchCard($, opened);
-        await update($, cards, (all) => ({ ...all, [opened]: loaded }));
+        await refreshCard($, opened);
     }
 }
+
+/**
+ * Reads again everything the pane draws: the chosen filter, then the other filters one by one, then the open card.
+ * The others and the card are left alone when the chosen filter's read fails.
+ */
+async function refreshAll($: EngineInterface): Promise<void> {
+    const chosen = await read($, filter);
+    if ((await refresh($, chosen)).kind !== "ready") {
+        return;
+    }
+    await refreshOthers($, chosen);
+    const opened = await read($, expanded);
+    if (opened !== null) {
+        await refreshCard($, opened);
+    }
+}
+
+/** The {@link reload} running now, if any. */
+let reloading: Promise<void> | undefined;
+
+/** Whether {@link reload} was asked for again while {@link reloading} ran. */
+let isStale = false;
+
+/**
+ * Runs {@link refreshAll}, or, while one runs, makes it read everything once more when it is through.
+ * Asks that come during a run never start a second one, since concurrent bd reads are slower than serial ones.
+ * Settles once nothing is left to read.
+ */
+function reload($: EngineInterface): Promise<void> {
+    if (reloading !== undefined) {
+        isStale = true;
+
+        return reloading;
+    }
+    reloading = (async () => {
+        do {
+            isStale = false;
+            await refreshAll($);
+        } while (isStale);
+    })().finally(() => {
+        reloading = undefined;
+    });
+
+    return reloading;
+}
+
+/** The database version the last {@link reloadChanged} read from, `undefined` before its first. */
+let readVersion: string | undefined;
+
+/**
+ * Runs {@link reload} while the pane is open and bd's database changed since the last such reload.
+ * A database whose version cannot be told is read every time, and a closed pane is read on the next `/beads-pane` instead.
+ */
+async function reloadChanged($: EngineInterface): Promise<void> {
+    if (!(await $.ui.panes()).some((pane) => pane.id === PANE)) {
+        return;
+    }
+    const version = await fetchVersion($);
+    if (version === undefined || version !== readVersion) {
+        readVersion = version;
+        await reload($);
+    }
+}
+
+/**
+ * Matches a shell command that runs bd anywhere in it, as `bd close bp-1` or `cd repo && bd update bp-1`.
+ * A command that only names bd, as `grep bd notes`, matches too and costs one needless reload.
+ */
+const RUNS_BD = /(^|[\s;&|(])bd(\s|$)/;
 
 /**
  * Colors of the common issue types: bd's own purple for epics, blue for features, red for bugs and cyan for tasks.
@@ -297,6 +371,7 @@ async function copyId(
  * Registers the `/beads-pane` command and draws the beads pane.
  * The pane opens only on the command, never unasked at session start.
  * Each run of the command reads the chosen filter from bd again, then the other filters in the background.
+ * While the pane is open, it is read again on its `Refresh` button, and at the end of each turn of the main loop and after each Bash command that runs bd when bd's database changed.
  */
 export const register: Register = (on) => {
     on("session.start", async ($, e, next) => {
@@ -320,6 +395,28 @@ export const register: Register = (on) => {
                 ? "Beads pane opened."
                 : `Beads pane is waiting for room: ${opened.reason}`,
         };
+    });
+
+    on("turn.complete", async ($, e, next) => {
+        const result = await next(e);
+        if (e.agentId === undefined) {
+            void reloadChanged($);
+        }
+
+        return result;
+    });
+
+    on("tool.call", { tool: "Bash" }, async ($, e, next) => {
+        const result = await next(e);
+        if (
+            e.tool === "Bash" &&
+            result.deny === undefined &&
+            RUNS_BD.test(e.command)
+        ) {
+            void reloadChanged($);
+        }
+
+        return result;
     });
 
     on("ui.render", { component: "Pane", requestId: PANE }, async ($, e) => {
@@ -502,6 +599,16 @@ export const register: Register = (on) => {
                             }}
                         />
                     ))}
+                    <Button
+                        key="refresh"
+                        label="Refresh"
+                        hotkey="u"
+                        plain
+                        dimColor
+                        onPress={() => {
+                            void reload($);
+                        }}
+                    />
                 </Box>
                 {state === undefined ? (
                     <Text dimColor>

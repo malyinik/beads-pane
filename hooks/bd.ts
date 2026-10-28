@@ -80,6 +80,57 @@ export async function fetchCard(
         : { kind: "ready", card };
 }
 
+/**
+ * The version of the embedded Dolt database bd reads: the text of its `manifest`, which every write to the database changes and a read leaves alone.
+ * `undefined` when it cannot be told, as with no database, a Dolt server in place of the embedded database, or files laid out otherwise.
+ * Never rejects.
+ */
+export async function fetchVersion(
+    $: EngineInterface,
+): Promise<string | undefined> {
+    const manifest = await locateManifest($);
+
+    return manifest === undefined
+        ? undefined
+        : await $.fs.read(manifest).catch(() => undefined);
+}
+
+/** Where {@link locateManifest} last found the `manifest`, and the working directory it was asked from. */
+let located: { cwd: string; manifest: string } | undefined;
+
+/**
+ * The path of the `manifest` of the embedded database `bd where` names for the working directory, or `undefined` when there is none.
+ * A path found is kept for that directory, so later calls run no bd.
+ */
+async function locateManifest($: EngineInterface): Promise<string | undefined> {
+    const cwd = await $.session.cwd();
+    if (located?.cwd === cwd) {
+        return located.manifest;
+    }
+    const where = await $.process.run(WHERE).catch(() => undefined);
+    const workspace =
+        where?.exitCode === 0 ? recordOf(where.stdout) : undefined;
+    if (
+        typeof workspace?.path !== "string" ||
+        typeof workspace.database_path !== "string"
+    ) {
+        return undefined;
+    }
+    const metadata = recordOf(
+        await $.fs.read(`${workspace.path}/metadata.json`).catch(() => ""),
+    );
+    if (
+        metadata?.dolt_mode !== "embedded" ||
+        typeof metadata.dolt_database !== "string"
+    ) {
+        return undefined;
+    }
+    const manifest = `${workspace.database_path}/${metadata.dolt_database}/.dolt/noms/manifest`;
+    located = { cwd, manifest };
+
+    return manifest;
+}
+
 /** A bd run that printed its JSON, or the failure it came to. */
 type Run =
     | { kind: "ran"; stdout: string }
@@ -118,7 +169,7 @@ async function explainFailure(
     listed: ProcessRunResult,
 ): Promise<Exclude<Run, { kind: "ran" }>> {
     const where = await $.process.run(WHERE).catch(() => undefined);
-    if (where !== undefined && errorOf(where.stdout)?.error === NO_DATABASE) {
+    if (where !== undefined && recordOf(where.stdout)?.error === NO_DATABASE) {
         return { kind: "missing" };
     }
 
@@ -130,7 +181,7 @@ async function explainFailure(
  * Falls back to the exit code when bd printed neither.
  */
 function failureText(ran: ProcessRunResult): string {
-    const message = errorOf(ran.stdout)?.message;
+    const message = recordOf(ran.stdout)?.message;
     if (typeof message === "string" && message !== "") {
         return message;
     }
@@ -143,8 +194,8 @@ function failureText(ran: ProcessRunResult): string {
     return line !== "" ? line : `bd exited with code ${ran.exitCode}.`;
 }
 
-/** The JSON error object bd printed, or `undefined` when the text is not one. */
-function errorOf(text: string): Record<string, unknown> | undefined {
+/** The JSON object in `text`, or `undefined` when the text is not one. */
+function recordOf(text: string): Record<string, unknown> | undefined {
     const value = parseJson(text);
 
     return isRecord(value) ? value : undefined;

@@ -85,23 +85,52 @@ function ran(exitCode: number, stdout: string, stderr = "") {
 /** How a hook standing for the engine answers one bd run. */
 type Answer = ReturnType<typeof ran> | { deny: string };
 
-/** The engine standing beneath the plugin: the bd runs it saw, and a way to let background reads finish. */
-type Engine = { argvs: string[][]; settle: () => Promise<void> };
+/** The engine standing beneath the plugin: the bd runs it saw, a way to let background reads finish, and the clock a held answer sleeps on. */
+type Engine = {
+    argvs: string[][];
+    settle: () => Promise<void>;
+    clock: ReturnType<typeof mock.clock>;
+};
 
 /**
  * Answers the engine calls `/beads-pane` makes, with `bd` answered by subcommand from `runs`.
  * A `{ deny }` answer makes that run reject, as when bd cannot start, and a function answers when its promise settles.
- * Returns the argument vectors bd was run with, and `settle`, which waits out the reads the command left running.
+ * Answers `ui.panes` with the panes `ui.open` was asked for, the end of a turn with its answer, the working directory with `/repo`, and `fs.read` from `files`, a path missing there being refused.
+ * Returns the argument vectors bd was run with, `settle`, which waits out the reads the command left running, and the mocked clock.
  */
 function engine(
     on: On,
     runs: Record<string, Answer | (() => Promise<Answer>)>,
+    files: Record<string, string> = {},
 ): Engine {
     const argvs: string[][] = [];
+    const panes: string[] = [];
     const clock = mock.clock(on);
     on("command.register", (_, e) => ({ value: { command: e.name } }));
-    on("ui.open", () => ({ value: { isPlaced: true } }));
+    on("ui.open", (_, e) => {
+        panes.push(e.id);
+
+        return { value: { isPlaced: true } };
+    });
+    on("ui.panes", () => ({
+        value: panes.map((id) => ({
+            id,
+            title: id,
+            isShown: true,
+            isFocused: false,
+            isPlaced: true,
+        })),
+    }));
     on("session.start", (_, e) => ({ cwd: e.cwd }));
+    on("turn.complete", (_, e) => ({ text: e.answer }));
+    on("session.cwd", () => ({ value: "/repo" }));
+    on("fs.read", (_, e) => {
+        const text = files[e.path];
+
+        return text === undefined
+            ? { deny: `ENOENT: ${e.path}` }
+            : { value: text };
+    });
     on("process.run", async (_, e) => {
         argvs.push([...e.argv]);
         const answer = runs[e.argv[1] ?? ""];
@@ -112,7 +141,7 @@ function engine(
         return answer ?? ran(1, "", `Error: unexpected ${e.argv.join(" ")}`);
     });
 
-    return { argvs, settle: () => clock.settle() };
+    return { argvs, settle: () => clock.settle(), clock };
 }
 
 test("/beads-pane is registered and opens the pane", async ($, on) => {
@@ -1070,4 +1099,211 @@ test("an epic's card counts its closed children, and linked issues share one id 
         (await ui.find({ key: "details-bp-1" }))?.props.backgroundColor,
     ).toBe("#8080801A");
     await ui.unmount();
+});
+
+/** The end of a turn of the main loop, as the engine raises it. */
+const TURN_END = {
+    answer: "",
+    durationMs: 1,
+    isAborted: false,
+    turnId: "turn-1",
+    reason: "answer",
+} as const;
+
+/** `bd where`, which a reload check runs while it does not know where the database is. */
+const WHERE = ["bd", "where", "--json"];
+
+/** Every filter read again after the pane's chosen `open`, as one reload runs them. */
+const RELOAD = [
+    COMMANDS.open,
+    COMMANDS.ready,
+    COMMANDS.blocked,
+    COMMANDS.closed,
+    COMMANDS.all,
+];
+
+test("the end of a turn reads the open pane again, its open card last", async ($, on) => {
+    const { bd, ui } = await opened($, on, ran(0, SHOWN));
+    await ui.press({ key: "card-bp-1.10" });
+    const before = bd.argvs.length;
+
+    await $.turn.complete(TURN_END);
+    await bd.settle();
+
+    expect(bd.argvs.slice(before)).toEqual([
+        WHERE,
+        ...RELOAD,
+        [
+            "bd",
+            "show",
+            "bp-1.10",
+            "--json",
+            "--include-dependents",
+            "--include-comments",
+        ],
+    ]);
+    await ui.unmount();
+});
+
+test("no turn end reads bd while the pane is closed, nor a subagent's while it is open", async ($, on) => {
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+
+    await $.turn.complete(TURN_END);
+    await bd.settle();
+    expect(bd.argvs).toEqual([]);
+
+    await $.command.run(TYPED);
+    await bd.settle();
+    const before = bd.argvs.length;
+    await $.turn.complete({ ...TURN_END, agentId: "agent-1" });
+    await bd.settle();
+    expect(bd.argvs.slice(before)).toEqual([]);
+});
+
+test("a Bash command that runs bd reads the open pane again once it has run", async ($, on) => {
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    const answered = {
+        result: { stdout: "done", stderr: "", interrupted: false },
+    };
+    on("tool.call", (_, e) => {
+        const command = e.tool === "Bash" ? e.command : "";
+        bd.argvs.push(["Bash", command]);
+
+        return command.includes("bp-2") ? { deny: "not now" } : answered;
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const before = bd.argvs.length;
+
+    const result = await $.tool.call({
+        tool: "Bash",
+        command: "cd /repo && bd close bp-1",
+    });
+    await bd.settle();
+    await $.tool.call({ tool: "Bash", command: "ls" });
+    await $.tool.call({ tool: "Bash", command: "bd close bp-2" });
+    await bd.settle();
+
+    expect(result.result).toEqual(answered.result);
+    expect(bd.argvs.slice(before)).toEqual([
+        ["Bash", "cd /repo && bd close bp-1"],
+        WHERE,
+        ...RELOAD,
+        ["Bash", "ls"],
+        ["Bash", "bd close bp-2"],
+    ]);
+});
+
+test("reloads asked for during a reload read everything once more after it, never at once", async ($, on) => {
+    let isHeld = false;
+    const bd: Engine = engine(on, {
+        list: async () => {
+            if (isHeld) {
+                await bd.clock.sleep(10);
+            }
+
+            return ran(0, LISTED);
+        },
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+    const before = bd.argvs.length;
+    isHeld = true;
+
+    const pressing = ui.press({ key: "refresh" });
+    await bd.settle();
+    const again = ui.press({ key: "refresh" });
+    await $.turn.complete(TURN_END);
+    await bd.settle();
+    expect(bd.argvs.slice(before)).toEqual([COMMANDS.open, WHERE]);
+
+    isHeld = false;
+    await bd.clock.advance(10);
+    await Promise.all([pressing, again]);
+    await bd.settle();
+    expect(bd.argvs.slice(before)).toEqual([
+        COMMANDS.open,
+        WHERE,
+        ...RELOAD.slice(1),
+        ...RELOAD,
+    ]);
+    await ui.unmount();
+});
+
+test("a turn end or a bd command reads nothing while the database version stays the same", async ($, on) => {
+    const files: Record<string, string> = {
+        "/repo/.beads/metadata.json": JSON.stringify({
+            dolt_mode: "embedded",
+            dolt_database: "bp",
+        }),
+        "/repo/.beads/embeddeddolt/bp/.dolt/noms/manifest": "version one",
+    };
+    const bd = engine(
+        on,
+        {
+            list: ran(0, LISTED),
+            ready: ran(0, "[]"),
+            blocked: ran(0, "[]"),
+            where: ran(
+                0,
+                JSON.stringify({
+                    path: "/repo/.beads",
+                    database_path: "/repo/.beads/embeddeddolt",
+                    prefix: "bp",
+                }),
+            ),
+        },
+        files,
+    );
+    on("tool.call", () => ({
+        result: { stdout: "", stderr: "", interrupted: false },
+    }));
+    await $.session.start({
+        cwd: "/repo",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const before = bd.argvs.length;
+
+    await $.turn.complete(TURN_END);
+    await bd.settle();
+    expect(bd.argvs.slice(before)).toEqual([WHERE, ...RELOAD]);
+
+    await $.tool.call({ tool: "Bash", command: "bd show bp-1" });
+    await $.turn.complete(TURN_END);
+    await bd.settle();
+    expect(bd.argvs.slice(before)).toEqual([WHERE, ...RELOAD]);
+
+    files["/repo/.beads/embeddeddolt/bp/.dolt/noms/manifest"] = "version two";
+    await $.tool.call({ tool: "Bash", command: "bd close bp-1" });
+    await bd.settle();
+    expect(bd.argvs.slice(before)).toEqual([WHERE, ...RELOAD, ...RELOAD]);
 });

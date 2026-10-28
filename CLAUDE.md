@@ -34,7 +34,8 @@ npx -y -p typescript@5.6.3 tsc -p .
 - The desktop draws a Button's `label` in place of its children, so a Button that shows its own children takes no `label`.
 - A `Space` number is whole cells on every surface. A step (`xs`, `sm`, ...) is sized by each surface, and the terminal draws `xs` and `sm` down as zero rows.
 - In tests, `$.command.run` does not wait for work the command left running; the `engine()` helper returns `settle`, backed by `mock.clock`.
-- In tests, `on(event)` takes one hook per event, so the `engine()` helper answers `process.run` for every bd subcommand.
+- In tests, `on(event)` takes one hook per event, so the `engine()` helper answers `process.run` for every bd subcommand, `ui.panes` from the panes it opened, `turn.complete`, `session.cwd` and `fs.read`.
+- In tests, `turn.complete` is answered with its own result, `{ text }`, while `ui.open` and `ui.panes` take `{ value }`.
 
 ## bd quirks
 
@@ -47,6 +48,7 @@ npx -y -p typescript@5.6.3 tsc -p .
 - `bd show` prints as `Owner` the `created_by` actor (git `user.name`), while the JSON `owner` is git `user.email`.
 - A `relates-to` link appears in both `dependencies` and `dependents`.
 - The entries of `dependents` carry zero dates (`0001-01-01T00:00:00Z`).
+- The embedded database's `.dolt/noms/manifest` changes its text on every write, while reads move only its modification time.
 
 ## Implemented
 
@@ -58,6 +60,9 @@ Before reporting such a change as done, check the list against the code it touch
 - Loading
   - Each run of the command reads the chosen filter, then the other filters one by one in the background.
   - Every filter keeps its last read in `beads-pane.lists`, so a switch draws at once while bd reads that filter again.
+  - While the pane is open, everything it draws is read again on the `Refresh` button (hotkey `u`), and at the end of each main-loop turn and after each Bash command that runs `bd` anywhere in it (`cd repo && bd close x` too) when the database version changed.
+  - The database version is the text of the embedded database's `manifest`, found through `bd where` and `metadata.json` once per working directory; when it cannot be read, as with a Dolt server, those triggers always read.
+  - Such a reload reads the chosen filter, then the others, then the open card; one asked for while another runs makes that one read once more instead of starting a second.
   - The pane draws four states besides the list: not loaded yet, loading, no beads database (with a `bd init` hint) and a bd error.
 - Filters
   - Buttons `Ready`, `Blocked`, `Open`, `Closed` and `All`, with the hotkeys `r`, `b`, `o`, `c` and `a`.
