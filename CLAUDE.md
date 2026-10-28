@@ -63,6 +63,7 @@ Before reporting such a change as done, check the list against the code it touch
 - Rows
   - Columns: status mark, priority, id, type, title. Each column has one width, and a wrapped title stays in its column.
   - Status marks are bd's own; an open issue that `bd blocked` lists gets the blocked mark `●`.
+  - Marks take bd's colors: `#FFB454` (in progress), `#F07178` (blocked), `#6C7680` (deferred), `#8090A0` (closed), open plain.
   - Priorities take bd's colors: P0 `#F07178` in bold, P1 `#FF8F40`, P2 `#E6B450`, P3 and P4 plain.
   - Types take `#D2A6FF` (epic), `#59C2FF` (feature), `#F26D78` (bug), `#95E6CB` (task) and `#A6ACB3` (any other).
   - Closed issues are drawn dim.

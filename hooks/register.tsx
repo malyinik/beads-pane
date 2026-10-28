@@ -65,6 +65,14 @@ const STATUS_MARKS: Readonly<Record<string, string>> = {
     closed: "✓",
 };
 
+/** The colors bd itself draws status marks in; the open mark is drawn as plain text. */
+const STATUS_COLORS: Readonly<Record<string, string>> = {
+    in_progress: "#FFB454",
+    blocked: "#F07178",
+    deferred: "#6C7680",
+    closed: "#8090A0",
+};
+
 /** The colors bd itself draws priorities in; P3 and P4 are drawn as plain text. */
 const PRIORITY_COLORS: Readonly<Record<number, string>> = {
     0: "#F07178",
@@ -126,9 +134,14 @@ const TYPE_COLOR = "#A6ACB3";
  * bd keeps such an issue `open`, since what holds it is an open dependency, not its own status.
  */
 function markOf(issue: Issue, blocked: ReadonlySet<string>): string {
+    return STATUS_MARKS[statusOf(issue, blocked)] ?? "?";
+}
+
+/** The status a row is drawn with: the issue's own, or `blocked` for an open issue the last `bd blocked` listed. */
+function statusOf(issue: Issue, blocked: ReadonlySet<string>): string {
     return blocked.has(issue.id) && issue.status === "open"
-        ? BLOCKED_MARK
-        : (STATUS_MARKS[issue.status] ?? "?");
+        ? "blocked"
+        : issue.status;
 }
 
 /** Width of the status and priority column, `○ P0` and a space. */
@@ -264,7 +277,15 @@ export const register: Register = (on) => {
                                 >
                                     <Box width={MARK_WIDTH} flexShrink={0}>
                                         <Text mono dimColor={isClosed}>
-                                            {markOf(issue, blocked)}{" "}
+                                            <Text
+                                                color={
+                                                    STATUS_COLORS[
+                                                        statusOf(issue, blocked)
+                                                    ]
+                                                }
+                                            >
+                                                {markOf(issue, blocked)}
+                                            </Text>{" "}
                                             <Text
                                                 color={
                                                     isClosed

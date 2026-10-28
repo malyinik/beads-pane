@@ -294,6 +294,50 @@ test("priorities take bd's colors, P3 and P4 plain", async ($, on) => {
     await ui.unmount();
 });
 
+test("status marks take bd's colors", async ($, on) => {
+    const issues = JSON.stringify(
+        ["open", "in_progress", "deferred", "held"].map((name, index) => ({
+            id: `bp-${index}`,
+            title: name,
+            status: name === "held" ? "open" : name,
+            priority: 2,
+            issue_type: "task",
+        })),
+    );
+    const bd = engine(on, {
+        list: ran(0, issues),
+        ready: ran(0, "[]"),
+        blocked: ran(
+            0,
+            JSON.stringify([
+                {
+                    id: "bp-3",
+                    title: "held",
+                    status: "open",
+                    priority: 2,
+                    issue_type: "task",
+                },
+            ]),
+        ),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    const marks = await Promise.all(
+        ["○", "◐", "❄", "●"].map(
+            async (mark) => (await exactText(ui, mark))?.props.color,
+        ),
+    );
+    expect(marks).toEqual([undefined, "#FFB454", "#6C7680", "#F07178"]);
+    await ui.unmount();
+});
+
 test("the command reads the chosen filter first, then the others in the background", async ($, on) => {
     const bd = engine(on, {
         list: ran(0, LISTED),
