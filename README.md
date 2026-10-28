@@ -6,7 +6,8 @@ The main target is the Claude Code desktop app (`desktop` surface).
 The terminal (`terminal` surface) runs the same code.
 
 > **Status:** early development.
-> The `/beads-pane` command opens the pane, but the pane does not list issues yet.
+> The `/beads-pane` command opens the pane and lists the open issues.
+> The list is read again on each run of the command.
 
 ## Requirements
 

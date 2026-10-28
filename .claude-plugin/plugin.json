@@ -2,7 +2,10 @@
     "name": "beads-pane",
     "version": "0.1.0",
     "description": "Claude Code plugin that shows beads (bd) issues in a side pane next to the chat",
-    "author": { "name": "malyinik" },
+    "types": "./types/index.d.ts",
+    "author": {
+        "name": "malyinik"
+    },
     "repository": "https://github.com/malyinik/beads-pane",
     "license": "MIT",
     "keywords": [
