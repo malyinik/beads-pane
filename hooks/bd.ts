@@ -27,7 +27,7 @@ const NO_DATABASE = "no_beads_directory";
 
 /**
  * Runs the bd command of `filter` in the session's working directory and turns its outcome into a {@link Load}.
- * The issues come sorted by priority, then by id.
+ * The issues come in the filter's order from {@link ORDERS}.
  * Never rejects: a bd that fails or cannot start comes back as an `error` load.
  */
 export async function fetchLoad(
@@ -53,7 +53,7 @@ export async function fetchLoad(
               kind: "error",
               message: "bd printed something other than a JSON list of issues.",
           }
-        : { kind: "ready", issues: issues.sort(byPriority) };
+        : { kind: "ready", issues: issues.sort(ORDERS[filter]) };
 }
 
 /**
@@ -122,10 +122,20 @@ function parseIssues(text: string): Issue[] | undefined {
             priority: typeof entry.priority === "number" ? entry.priority : 2,
             issue_type:
                 typeof entry.issue_type === "string" ? entry.issue_type : "",
+            ...(typeof entry.closed_at === "string"
+                ? { closed_at: entry.closed_at }
+                : {}),
         });
     }
 
     return issues;
+}
+
+/** Orders closed issues by when they were closed, the latest first, then as {@link byPriority} does. */
+function byClosing(a: Issue, b: Issue): number {
+    return (
+        (b.closed_at ?? "").localeCompare(a.closed_at ?? "") || byPriority(a, b)
+    );
 }
 
 /** Orders issues by priority, the most urgent first, then by id with numeric parts compared as numbers. */
@@ -135,6 +145,15 @@ function byPriority(a: Issue, b: Issue): number {
         a.id.localeCompare(b.id, "en", { numeric: true })
     );
 }
+
+/** How each {@link Filter} orders its issues: closed ones by closing, the rest by priority. */
+const ORDERS: Record<Filter, (a: Issue, b: Issue) => number> = {
+    ready: byPriority,
+    blocked: byPriority,
+    open: byPriority,
+    closed: byClosing,
+    all: byPriority,
+};
 
 /** `JSON.parse` that returns `undefined` instead of throwing. */
 function parseJson(text: string): unknown {

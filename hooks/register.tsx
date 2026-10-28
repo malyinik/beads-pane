@@ -17,7 +17,7 @@ const COMMAND = "beads-pane";
 const lists = atom(
     { plugin: "beads-pane", key: "lists" } as const,
     {},
-    { shape: "lists-1" },
+    { shape: "lists-2" },
 );
 
 /** The {@link Filter} chosen in the pane, `open` until the person picks another. */

@@ -736,3 +736,58 @@ test("rows keep their columns at the top, with room between them", async ($, on)
     ).toBe("xs");
     await ui.unmount();
 });
+
+test("closed issues come by closing time, the latest first, whatever their priority", async ($, on) => {
+    const closed = JSON.stringify([
+        {
+            id: "bp-1",
+            title: "Early",
+            status: "closed",
+            priority: 0,
+            issue_type: "task",
+            closed_at: "2026-10-28T19:04:19Z",
+        },
+        {
+            id: "bp-2",
+            title: "Late",
+            status: "closed",
+            priority: 3,
+            issue_type: "task",
+            closed_at: "2026-10-28T20:02:36Z",
+        },
+        {
+            id: "bp-3",
+            title: "Middle",
+            status: "closed",
+            priority: 1,
+            issue_type: "task",
+            closed_at: "2026-10-28T19:43:39Z",
+        },
+    ]);
+    const bd = engine(on, {
+        list: ran(0, closed),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    await ui.press({ key: "filter-closed" });
+    expect(await rows(ui)).toEqual([
+        "✓ P3bp-2taskLate",
+        "✓ P1bp-3taskMiddle",
+        "✓ P0bp-1taskEarly",
+    ]);
+    await ui.press({ key: "filter-all" });
+    expect(await rows(ui)).toEqual([
+        "✓ P0bp-1taskEarly",
+        "✓ P1bp-3taskMiddle",
+        "✓ P3bp-2taskLate",
+    ]);
+    await bd.settle();
+    await ui.unmount();
+});

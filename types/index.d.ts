@@ -10,6 +10,8 @@ export type Issue = {
     priority: number;
     /** Issue type, as `task`, `bug`, `feature` or `epic`. */
     issue_type: string;
+    /** When the issue was closed, as an ISO 8601 UTC time; absent while it is not closed. */
+    closed_at?: string;
 };
 
 /**
