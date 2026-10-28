@@ -1,0 +1,69 @@
+# beads-pane
+
+A Claude Code plugin (a hooks-module mod) that shows beads (`bd`) issues in a side pane.
+The main target is the desktop app (`desktop` surface); the terminal runs the same code.
+It is developed against Claude Code 2.1.312 and bd 1.2.2.
+
+## Layout
+
+| Path                      | What it holds                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
+| `hooks/register.tsx`      | The `/beads-pane` command, the state atoms and the `Pane` drawing                                 |
+| `hooks/bd.ts`             | Running bd and turning its JSON into a `Load`                                                     |
+| `types/index.d.ts`        | The state contract (`PluginState["beads-pane"]`) and the shared types                             |
+| `tests/register.test.tsx` | Tests on `claude-code/testing`                                                                    |
+| `.claude-plugin/`         | `plugin.json` and `marketplace.json`; `types/` inside it is written by the engine and git-ignored |
+
+## Checks
+
+Run all three before reporting a change as done:
+
+```bash
+claude plugin validate .
+claude plugin test .
+npx -y -p typescript@5.6.3 tsc -p .
+```
+
+`tsc` needs `.claude-plugin/types/`, which the engine writes once the plugin has loaded in a signed-in session.
+
+## Engine quirks
+
+- The validator's scan accepts `read`, `update` and `atom` only when the atom is a `const` of the same file.
+- `$.state` outlives a reload: bump an atom's `shape` tag whenever the type of its stored value changes.
+- A render hook never writes state; writes come from handlers and other events.
+- The desktop draws a Button's `label` in place of its children, so a Button that shows its own children takes no `label`.
+- A `Space` number is whole cells on every surface. A step (`xs`, `sm`, ...) is sized by each surface, and the terminal draws `xs` and `sm` down as zero rows.
+- In tests, `$.command.run` does not wait for work the command left running; the `engine()` helper returns `settle`, backed by `mock.clock`.
+- In tests, `on(event)` takes one hook per event, so the `engine()` helper answers `process.run` for every bd subcommand.
+
+## bd quirks
+
+- Concurrent bd runs on the embedded Dolt database are slower than serial ones, so the pane reads filters one after another.
+- bd keeps a dependency-blocked issue's `status` as `open`; only `bd blocked` says it is blocked.
+- `bd list` stops at 50 issues and `bd ready` at 100 unless given `--limit 0`.
+- Without a database, `bd list` writes only text to stderr, while `bd where --json` reports `"error": "no_beads_directory"`.
+- `bd history <id> --json` fails on bd 1.2.2.
+
+## Implemented
+
+This list is the map of what the plugin does today, and it must match the code.
+Any change that adds, changes or removes behaviour updates this list in the same commit: a new item for a new feature, an edited item for a changed one, a deleted item for a removed one.
+Before reporting such a change as done, check the list against the code it touched.
+
+- `/beads-pane` opens the pane; nothing opens it at session start.
+- Loading
+  - Each run of the command reads the chosen filter, then the other filters one by one in the background.
+  - Every filter keeps its last read in `beads-pane.lists`, so a switch draws at once while bd reads that filter again.
+  - The pane draws four states besides the list: not loaded yet, loading, no beads database (with a `bd init` hint) and a bd error.
+- Filters
+  - Buttons `Ready`, `Blocked`, `Open`, `Closed` and `All`, with the hotkeys `r`, `b`, `o`, `c` and `a`.
+  - The choice is kept in `beads-pane.filter`; `Open` is the default.
+  - `Open` leaves out deferred and closed issues.
+  - `Closed` is ordered by `closed_at`, latest first; the other filters by priority, then by id.
+- Rows
+  - Columns: status mark, priority, id, type, title. Each column has one width, and a wrapped title stays in its column.
+  - Status marks are bd's own; an open issue that `bd blocked` lists gets the blocked mark `●`.
+  - Priorities take bd's colors: P0 `#F07178` in bold, P1 `#FF8F40`, P2 `#E6B450`, P3 and P4 plain.
+  - Types take `#D2A6FF` (epic), `#59C2FF` (feature), `#F26D78` (bug), `#95E6CB` (task) and `#A6ACB3` (any other).
+  - Closed issues are drawn dim.
+  - Pressing an id copies it, and a toast says whether the copy took.
