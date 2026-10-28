@@ -661,3 +661,78 @@ test("a copy the surface refuses says why", async ($, on) => {
     ]);
     await ui.unmount();
 });
+
+test("an open issue that bd blocked lists is marked blocked in every other filter", async ($, on) => {
+    const blocked = JSON.stringify([
+        {
+            id: "bp-1.10",
+            title: "Second",
+            status: "open",
+            priority: 1,
+            issue_type: "task",
+            blocked_by: ["bp-1"],
+        },
+    ]);
+    const listed = JSON.stringify([
+        {
+            id: "bp-1",
+            title: "First",
+            status: "open",
+            priority: 0,
+            issue_type: "epic",
+        },
+        {
+            id: "bp-1.10",
+            title: "Second",
+            status: "open",
+            priority: 1,
+            issue_type: "task",
+        },
+    ]);
+    const bd = engine(on, {
+        list: ran(0, listed),
+        ready: ran(0, "[]"),
+        blocked: ran(0, blocked),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    expect(await rows(ui)).toEqual([
+        "○ P0bp-1epicFirst",
+        "● P1bp-1.10taskSecond",
+    ]);
+    await ui.unmount();
+});
+
+test("rows keep their columns at the top, with room between them", async ($, on) => {
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    const boxes = await ui.findAll({ type: "Box" });
+    const rowBoxes = boxes.filter((box) => box.key?.startsWith("issue-"));
+    expect(rowBoxes.map((box) => box.props.alignItems)).toEqual([
+        "flex-start",
+        "flex-start",
+    ]);
+    expect(
+        boxes.find((box) => box.props.rowGap !== undefined)?.props.rowGap,
+    ).toBe("xs");
+    await ui.unmount();
+});

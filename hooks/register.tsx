@@ -53,11 +53,14 @@ const FILTERS: readonly {
     { filter: "all", label: "All", hotkey: "a", empty: "No issues." },
 ];
 
+/** The mark bd draws for a blocked issue. */
+const BLOCKED_MARK = "●";
+
 /** The mark bd itself draws for each status, leading every row. */
 const STATUS_MARKS: Readonly<Record<string, string>> = {
     open: "○",
     in_progress: "◐",
-    blocked: "●",
+    blocked: BLOCKED_MARK,
     deferred: "❄",
     closed: "✓",
 };
@@ -117,6 +120,16 @@ const TYPE_COLORS: Readonly<Record<string, string>> = {
 
 /** Color of the remaining types, between bd's gray and the plain text. */
 const TYPE_COLOR = "#A6ACB3";
+
+/**
+ * The mark leading a row: bd's mark for the issue's status, or the blocked mark for an issue the last `bd blocked` listed.
+ * bd keeps such an issue `open`, since what holds it is an open dependency, not its own status.
+ */
+function markOf(issue: Issue, blocked: ReadonlySet<string>): string {
+    return blocked.has(issue.id) && issue.status === "open"
+        ? BLOCKED_MARK
+        : (STATUS_MARKS[issue.status] ?? "?");
+}
 
 /** Width of the status and priority column, `○ P0` and a space. */
 const MARK_WIDTH = "○ P0 ".length;
@@ -201,6 +214,11 @@ export const register: Register = (on) => {
         }
 
         const issues = state?.kind === "ready" ? state.issues : [];
+        const blocked = new Set(
+            all.blocked?.kind === "ready"
+                ? all.blocked.issues.map((issue) => issue.id)
+                : [],
+        );
         const idWidth = columnWidth(issues, (issue) => issue.id);
         const typeWidth = columnWidth(issues, (issue) => issue.issue_type);
         const empty =
@@ -234,7 +252,7 @@ export const register: Register = (on) => {
                 ) : state.issues.length === 0 ? (
                     <Text dimColor>{empty}</Text>
                 ) : (
-                    <Box flexDirection="column">
+                    <Box flexDirection="column" rowGap="xs">
                         {state.issues.map((issue) => {
                             const isClosed = issue.status === "closed";
 
@@ -242,10 +260,11 @@ export const register: Register = (on) => {
                                 <Box
                                     key={`issue-${issue.id}`}
                                     flexDirection="row"
+                                    alignItems="flex-start"
                                 >
                                     <Box width={MARK_WIDTH} flexShrink={0}>
                                         <Text mono dimColor={isClosed}>
-                                            {STATUS_MARKS[issue.status] ?? "?"}{" "}
+                                            {markOf(issue, blocked)}{" "}
                                             <Text
                                                 color={
                                                     isClosed
