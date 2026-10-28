@@ -65,11 +65,14 @@ const STATUS_MARKS: Readonly<Record<string, string>> = {
     closed: "✓",
 };
 
-/** The colors bd itself draws status marks in; the open mark is drawn as plain text. */
+/**
+ * The colors status marks are drawn in, bd's own but for the deferred mark, which bd draws gray and the pane in ice blue so it does not read as closed.
+ * The open mark is drawn as plain text.
+ */
 const STATUS_COLORS: Readonly<Record<string, string>> = {
     in_progress: "#FFB454",
     blocked: "#F07178",
-    deferred: "#6C7680",
+    deferred: "#39BAE6",
     closed: "#8090A0",
 };
 

@@ -294,7 +294,7 @@ test("priorities take bd's colors, P3 and P4 plain", async ($, on) => {
     await ui.unmount();
 });
 
-test("status marks take bd's colors", async ($, on) => {
+test("status marks take bd's colors but an ice blue for deferred", async ($, on) => {
     const issues = JSON.stringify(
         ["open", "in_progress", "deferred", "held"].map((name, index) => ({
             id: `bp-${index}`,
@@ -334,7 +334,7 @@ test("status marks take bd's colors", async ($, on) => {
             async (mark) => (await exactText(ui, mark))?.props.color,
         ),
     );
-    expect(marks).toEqual([undefined, "#FFB454", "#6C7680", "#F07178"]);
+    expect(marks).toEqual([undefined, "#FFB454", "#39BAE6", "#F07178"]);
     await ui.unmount();
 });
 
