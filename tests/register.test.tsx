@@ -170,7 +170,7 @@ const COMMANDS = {
     all: ["bd", "list", "--all", "--json", "--limit", "0"],
 };
 
-test("the pane lists open issues by priority, with status, priority, id, title and type", async ($, on) => {
+test("the pane lists open issues by priority, with status, priority, id, type and title", async ($, on) => {
     const bd = engine(on, { list: ran(0, LISTED), ready: ran(0, "[]"), blocked: ran(0, "[]") });
     await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
     await $.command.run(TYPED);
@@ -179,14 +179,14 @@ test("the pane lists open issues by priority, with status, priority, id, title a
     for (const surface of SURFACES) {
         const ui = await $.ui.mount({ ...PANE, surface });
 
-        expect(await rows(ui)).toEqual(["○ P0 bp-1First · epic", "◐ P1 bp-1.10Second"]);
+        expect(await rows(ui)).toEqual(["○ P0bp-1epicFirst", "◐ P1bp-1.10taskSecond"]);
         expect((await ui.find({ key: "filter-open" }))?.props.variant).toBe("primary");
         expect((await ui.find({ key: "filter-ready" }))?.props.variant).toBe("secondary");
         await ui.unmount();
     }
 });
 
-test("ids take one width, so every title starts in the same column", async ($, on) => {
+test("every column takes one width, so the titles start in the same column", async ($, on) => {
     const bd = engine(on, { list: ran(0, LISTED), ready: ran(0, "[]"), blocked: ran(0, "[]") });
     await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
     await $.command.run(TYPED);
@@ -196,7 +196,8 @@ test("ids take one width, so every title starts in the same column", async ($, o
     const widths = (await ui.findAll({ type: "Box" }))
         .filter((box) => box.props.flexShrink === 0)
         .map((box) => box.props.width);
-    expect(widths).toEqual(["○ P0 bp-1.10".length + 1, "○ P0 bp-1.10".length + 1]);
+    const columns = ["○ P0 ".length, "bp-1.10 ".length, "epic ".length];
+    expect(widths).toEqual([...columns, ...columns]);
     await ui.unmount();
 });
 
@@ -306,7 +307,7 @@ test("closed issues are drawn dim, their priority uncolored", async ($, on) => {
     const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
 
     await ui.press({ key: "filter-all" });
-    expect(await rows(ui)).toEqual(["✓ P0 bp-3Done"]);
+    expect(await rows(ui)).toEqual(["✓ P0bp-3taskDone"]);
     expect((await exactText(ui, "Done"))?.props.dimColor).toBe(true);
     const priority = await exactText(ui, "P0");
     expect(priority).toBeDefined();
@@ -429,5 +430,72 @@ test("a bd that cannot start is an error, and the command still answers", async 
     expect((await ui.find({ type: "Text" }))?.text).toMatch(
         /^bd failed: Could not run bd: .*ENOENT/,
     );
+    await ui.unmount();
+});
+
+test("types take their own colors, the rest one tone between gray and plain", async ($, on) => {
+    const typed = JSON.stringify(
+        ["epic", "feature", "bug", "task", "chore"].map((type, n) => ({
+            id: `bp-${n}`,
+            title: "T",
+            status: "open",
+            priority: 2,
+            issue_type: type,
+        })),
+    );
+    const bd = engine(on, { list: ran(0, typed), ready: ran(0, "[]"), blocked: ran(0, "[]") });
+    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    const colors = await Promise.all(
+        ["epic", "feature", "bug", "task", "chore"].map(async (type) => (await exactText(ui, type))?.props.color),
+    );
+    expect(colors).toEqual(["#D2A6FF", "#59C2FF", "#F26D78", "#95E6CB", "#A6ACB3"]);
+    await ui.unmount();
+});
+
+test("pressing an id copies it on the surface it was pressed on and says so", async ($, on) => {
+    const copied: unknown[] = [];
+    const toasts: string[] = [];
+    const bd = engine(on, { list: ran(0, LISTED), ready: ran(0, "[]"), blocked: ran(0, "[]") });
+    on("ui.copy", (_, e) => {
+        copied.push(e);
+
+        return { value: { isCopied: true } };
+    });
+    on("ui.toast", (_, e) => {
+        toasts.push(e.text);
+
+        return { value: undefined };
+    });
+    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    await ui.press({ key: "copy-bp-1.10" });
+    expect(copied).toEqual([{ text: "bp-1.10", surface: "desktop" }]);
+    expect(toasts).toEqual(["Copied bp-1.10"]);
+    await ui.unmount();
+});
+
+test("a copy the surface refuses says why", async ($, on) => {
+    const toasts: string[] = [];
+    const bd = engine(on, { list: ran(0, LISTED), ready: ran(0, "[]"), blocked: ran(0, "[]") });
+    on("ui.copy", () => ({ value: { isCopied: false, reason: "no-clipboard" } }));
+    on("ui.toast", (_, e) => {
+        toasts.push(e.text);
+
+        return { value: undefined };
+    });
+    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    await ui.press({ key: "copy-bp-1" });
+    expect(toasts).toEqual(["Could not copy bp-1: the clipboard is not reachable"]);
     await ui.unmount();
 });

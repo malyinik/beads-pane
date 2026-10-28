@@ -1,5 +1,5 @@
 import { atom, read, update } from "claude-code";
-import type { EngineInterface, Register } from "claude-code";
+import type { EngineInterface, Register, RenderSurface } from "claude-code";
 
 import type { Filter, Issue, Load } from "../types";
 import { fetchLoad } from "./bd";
@@ -95,14 +95,41 @@ async function refreshOthers($: EngineInterface, chosen: Filter): Promise<void> 
     }
 }
 
-/** Width of the fixed part of a row: status mark, priority, an id of `idWidth` characters and the space before the title. */
-function prefixWidth(idWidth: number): number {
-    return "○ P0 ".length + idWidth + 1;
+/**
+ * Colors of the common issue types: bd's own purple for epics, blue for features, red for bugs and cyan for tasks.
+ * Every other type takes {@link TYPE_COLOR}.
+ */
+const TYPE_COLORS: Readonly<Record<string, string>> = {
+    epic: "#D2A6FF",
+    feature: "#59C2FF",
+    bug: "#F26D78",
+    task: "#95E6CB",
+};
+
+/** Color of the remaining types, between bd's gray and the plain text. */
+const TYPE_COLOR = "#A6ACB3";
+
+/** Width of the status and priority column, `○ P0` and a space. */
+const MARK_WIDTH = "○ P0 ".length;
+
+/** The widest value of `field` among `issues`, plus the space after the column. */
+function columnWidth(issues: readonly Issue[], field: (issue: Issue) => string): number {
+    return Math.max(0, ...issues.map((issue) => field(issue).length)) + 1;
 }
 
-/** The type shown after a title, or nothing for a plain task. */
-function typeSuffix(issue: Issue): string {
-    return issue.issue_type === "task" ? "" : ` · ${issue.issue_type}`;
+/** What the toast says for each reason a copy did not take. */
+const COPY_FAILURES: Readonly<Record<"no-surface" | "no-clipboard" | "refused", string>> = {
+    "no-surface": "nothing to copy on",
+    "no-clipboard": "the clipboard is not reachable",
+    refused: "the copy was refused",
+};
+
+/**
+ * Puts an issue id on the clipboard of the surface it was pressed on and says how that went in a toast.
+ */
+async function copyId($: EngineInterface, id: string, surface: RenderSurface): Promise<void> {
+    const copied = await $.ui.copy({ text: id, surface });
+    $.ui.toast(copied.isCopied ? `Copied ${id}` : `Could not copy ${id}: ${COPY_FAILURES[copied.reason]}`);
 }
 
 /**
@@ -151,9 +178,9 @@ export const register: Register = (on) => {
             );
         }
 
-        const width = prefixWidth(
-            state?.kind === "ready" ? Math.max(0, ...state.issues.map((one) => one.id.length)) : 0,
-        );
+        const issues = state?.kind === "ready" ? state.issues : [];
+        const idWidth = columnWidth(issues, (issue) => issue.id);
+        const typeWidth = columnWidth(issues, (issue) => issue.issue_type);
         const empty =
             FILTERS.find((one) => one.filter === chosen)?.empty ?? "No issues.";
 
@@ -189,7 +216,7 @@ export const register: Register = (on) => {
 
                             return (
                                 <Box key={`issue-${issue.id}`} flexDirection="row">
-                                    <Box width={width} flexShrink={0}>
+                                    <Box width={MARK_WIDTH} flexShrink={0}>
                                         <Text mono dimColor={isClosed}>
                                             {STATUS_MARKS[issue.status] ?? "?"}{" "}
                                             <Text
@@ -197,15 +224,32 @@ export const register: Register = (on) => {
                                                 weight={issue.priority === 0 && !isClosed ? "bold" : undefined}
                                             >
                                                 P{issue.priority}
-                                            </Text>{" "}
-                                            <Text dimColor>{issue.id}</Text>
+                                            </Text>
+                                        </Text>
+                                    </Box>
+                                    <Box width={idWidth} flexShrink={0}>
+                                        <Button
+                                            key={`copy-${issue.id}`}
+                                            plain
+                                            dimColor
+                                            onPress={(press) => {
+                                                void copyId($, issue.id, press.surface);
+                                            }}
+                                        >
+                                            <Text mono>{issue.id}</Text>
+                                        </Button>
+                                    </Box>
+                                    <Box width={typeWidth} flexShrink={0}>
+                                        <Text
+                                            mono
+                                            dimColor={isClosed}
+                                            color={isClosed ? undefined : (TYPE_COLORS[issue.issue_type] ?? TYPE_COLOR)}
+                                        >
+                                            {issue.issue_type}
                                         </Text>
                                     </Box>
                                     <Box flexShrink={1}>
-                                        <Text dimColor={isClosed}>
-                                            {issue.title}
-                                            <Text dimColor>{typeSuffix(issue)}</Text>
-                                        </Text>
+                                        <Text dimColor={isClosed}>{issue.title}</Text>
                                     </Box>
                                 </Box>
                             );
