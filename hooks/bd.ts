@@ -1,9 +1,14 @@
 import type { EngineInterface, ProcessRunResult } from "claude-code";
 
-import type { Issue, Load } from "../types";
+import type { Filter, Issue, Load } from "../types";
 
-/** `bd list` with every open issue, past bd's default limit of 50. */
-const LIST = ["bd", "list", "--json", "--limit", "0"] as const;
+/** The bd command that lists each {@link Filter}'s issues, with no limit on their number. */
+const COMMANDS: Record<Filter, readonly string[]> = {
+    ready: ["bd", "ready", "--json", "--limit", "0"],
+    blocked: ["bd", "blocked", "--json"],
+    open: ["bd", "list", "--json", "--limit", "0", "--status", "open,in_progress,blocked"],
+    all: ["bd", "list", "--all", "--json", "--limit", "0"],
+};
 
 /** `bd where`, which names the workspace bd resolves for the working directory. */
 const WHERE = ["bd", "where", "--json"] as const;
@@ -12,13 +17,14 @@ const WHERE = ["bd", "where", "--json"] as const;
 const NO_DATABASE = "no_beads_directory";
 
 /**
- * Runs `bd list` in the session's working directory and turns its outcome into a {@link Load}.
+ * Runs the bd command of `filter` in the session's working directory and turns its outcome into a {@link Load}.
+ * The issues come sorted by priority, then by id.
  * Never rejects: a bd that fails or cannot start comes back as an `error` load.
  */
-export async function fetchLoad($: EngineInterface): Promise<Load> {
+export async function fetchLoad($: EngineInterface, filter: Filter): Promise<Load> {
     let listed: ProcessRunResult;
     try {
-        listed = await $.process.run(LIST);
+        listed = await $.process.run(COMMANDS[filter]);
     } catch (error) {
         return {
             kind: "error",
@@ -34,14 +40,14 @@ export async function fetchLoad($: EngineInterface): Promise<Load> {
         ? {
               kind: "error",
               message:
-                  "bd list printed something other than a JSON list of issues.",
+                  "bd printed something other than a JSON list of issues.",
           }
-        : { kind: "ready", issues };
+        : { kind: "ready", filter, issues: issues.sort(byPriority) };
 }
 
 /**
- * Tells a missing database from any other failure of `bd list`.
- * `bd list` reports a missing database only as text on stderr, so the check asks `bd where`, which reports it as a JSON error code.
+ * Tells a missing database from any other failure of a bd listing.
+ * The listings report a missing database only as text on stderr, so the check asks `bd where`, which reports it as a JSON error code.
  */
 async function explainFailure(
     $: EngineInterface,
@@ -109,6 +115,11 @@ function parseIssues(text: string): Issue[] | undefined {
     }
 
     return issues;
+}
+
+/** Orders issues by priority, the most urgent first, then by id with numeric parts compared as numbers. */
+function byPriority(a: Issue, b: Issue): number {
+    return a.priority - b.priority || a.id.localeCompare(b.id, "en", { numeric: true });
 }
 
 /** `JSON.parse` that returns `undefined` instead of throwing. */

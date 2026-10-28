@@ -13,6 +13,12 @@ export type Issue = {
 };
 
 /**
+ * Which issues the pane lists, each read by its own bd command.
+ * `ready` has no open blockers, `blocked` waits on another issue, `open` is everything neither closed nor deferred, `all` includes both.
+ */
+export type Filter = "ready" | "blocked" | "open" | "all";
+
+/**
  * What the pane knows of the session's beads database.
  * `idle` holds until the first load, `missing` means bd found no database for the session's working directory.
  */
@@ -20,10 +26,10 @@ export type Load =
     | { kind: "idle" }
     | { kind: "missing" }
     | { kind: "error"; message: string }
-    | { kind: "ready"; issues: Issue[] };
+    | { kind: "ready"; filter: Filter; issues: Issue[] };
 
 declare module "claude-code" {
     interface PluginState {
-        "beads-pane": { load: Shaped<Load> };
+        "beads-pane": { load: Shaped<Load>; filter: Shaped<Filter> };
     }
 }
