@@ -1,8 +1,8 @@
 import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register, RenderSurface } from "claude-code";
 
-import type { Filter, Issue, Load } from "../types";
-import { fetchLoad } from "./bd";
+import type { Card, CardLoad, Filter, Issue, Load } from "../types";
+import { fetchCard, fetchLoad } from "./bd";
 
 /** Id of the side pane, shared by `$.ui.open` and the `Pane` render hook. */
 export const PANE = "beads";
@@ -24,6 +24,22 @@ const lists = atom(
 const filter = atom({ plugin: "beads-pane", key: "filter" } as const, "open", {
     shape: "filter-1",
 });
+
+/** The id of the issue whose card is open under its row, `null` while every card is closed. */
+const expanded = atom(
+    { plugin: "beads-pane", key: "expanded" } as const,
+    null,
+    { shape: "expanded-1" },
+);
+
+/** The last read of each card opened, by issue id, so a card opened again draws at once. */
+const cards = atom(
+    { plugin: "beads-pane", key: "cards" } as const,
+    {},
+    {
+        shape: "cards-1",
+    },
+);
 
 /** The filter switch above the list, in the order its buttons are drawn. */
 const FILTERS: readonly {
@@ -119,6 +135,20 @@ async function refreshOthers(
 }
 
 /**
+ * Opens the card of issue `id` under its row and reads it again, or closes it when it is the open one.
+ * Only one card is open at a time.
+ * The card drawn meanwhile is the issue's last read, if any.
+ */
+async function toggle($: EngineInterface, id: string): Promise<void> {
+    const opened = (await read($, expanded)) === id ? null : id;
+    await update($, expanded, () => opened);
+    if (opened !== null) {
+        const loaded = await fetchCard($, opened);
+        await update($, cards, (all) => ({ ...all, [opened]: loaded }));
+    }
+}
+
+/**
  * Colors of the common issue types: bd's own purple for epics, blue for features, red for bugs and cyan for tasks.
  * Every other type takes {@link TYPE_COLOR}.
  */
@@ -156,6 +186,86 @@ function columnWidth(
     field: (issue: Issue) => string,
 ): number {
     return Math.max(0, ...issues.map((issue) => field(issue).length)) + 1;
+}
+
+/** The text sections of a card, in the order they are drawn, each shown only when bd has text for it. */
+const TEXTS: readonly {
+    /** The {@link Card} field that holds the section's markdown. */
+    field: "description" | "design" | "acceptance_criteria" | "notes";
+    /** The heading above the section. */
+    heading: string;
+}[] = [
+    { field: "description", heading: "Description" },
+    { field: "design", heading: "Design" },
+    { field: "acceptance_criteria", heading: "Acceptance criteria" },
+    { field: "notes", heading: "Notes" },
+];
+
+/** The groups of linked issues on a card, in the order they are drawn, each shown only when it has issues. */
+const LINKS: readonly {
+    /** The {@link Card} field that holds the group's issues. */
+    field: "parent" | "depends_on" | "blocks" | "children" | "related";
+    /** The heading above the group. */
+    heading: string;
+}[] = [
+    { field: "parent", heading: "Parent" },
+    { field: "depends_on", heading: "Depends on" },
+    { field: "blocks", heading: "Blocks" },
+    { field: "children", heading: "Children" },
+    { field: "related", heading: "Related" },
+];
+
+/**
+ * The line of facts atop a card: status, assignee, labels, then the creation, last change and closing days.
+ * A fact bd leaves empty is left out.
+ */
+function factsOf(
+    issue: Issue,
+    card: Card,
+    blocked: ReadonlySet<string>,
+): string {
+    const closed =
+        issue.closed_at === undefined
+            ? ""
+            : `closed ${dayOf(issue.closed_at)}${card.close_reason === "" ? "" : `: ${card.close_reason}`}`;
+
+    return [
+        statusOf(issue, blocked).replace("_", " "),
+        card.owner === "" ? "" : `owner ${card.owner}`,
+        card.assignee === "" ? "" : `assignee ${card.assignee}`,
+        card.labels.length === 0 ? "" : `labels ${card.labels.join(", ")}`,
+        card.created_at === "" ? "" : `created ${dayOf(card.created_at)}`,
+        card.updated_at === "" ? "" : `updated ${dayOf(card.updated_at)}`,
+        closed,
+    ]
+        .filter((fact) => fact !== "")
+        .join(" · ");
+}
+
+/** How many of an epic's `children` are closed, as bd's `3/10 complete (30%)`. */
+function progressOf(children: readonly Issue[]): string {
+    const closed = children.filter((child) => child.status === "closed").length;
+
+    return `${closed}/${children.length} complete (${Math.round((closed / children.length) * 100)}%)`;
+}
+
+/** Width of the id column shared by every group of linked issues on `card`. */
+function linkWidthOf(card: Card): number {
+    return columnWidth(
+        LINKS.flatMap(({ field }) => card[field]),
+        (issue) => issue.id,
+    );
+}
+
+/**
+ * Background of an open card on the surfaces that draw one: a translucent gray that lifts the card off the pane in a dark theme and a light one alike.
+ * The terminal draws the card on the pane's own background.
+ */
+const CARD_BACKGROUND = "#8080801A";
+
+/** The UTC day of an ISO 8601 time, as `2026-10-28`. */
+function dayOf(time: string): string {
+    return time.slice(0, 10);
 }
 
 /** What the toast says for each reason a copy did not take. */
@@ -213,9 +323,12 @@ export const register: Register = (on) => {
     });
 
     on("ui.render", { component: "Pane", requestId: PANE }, async ($, e) => {
-        const { Box, Button, Text } = $.ui.resolve(e);
+        const { Box, Button, Markdown, Text } = $.ui.resolve(e);
         const all = await read($, lists);
         const chosen = await read($, filter);
+        const opened = await read($, expanded);
+        const card =
+            opened === null ? undefined : (await read($, cards))[opened];
         const state = all[chosen];
 
         if (state?.kind === "missing") {
@@ -239,6 +352,139 @@ export const register: Register = (on) => {
         const typeWidth = columnWidth(issues, (issue) => issue.issue_type);
         const empty =
             FILTERS.find((one) => one.filter === chosen)?.empty ?? "No issues.";
+
+        /** The status mark and priority of `issue`, in bd's colors, both dim when it is closed. */
+        const drawMark = (issue: Issue) => {
+            const isClosed = issue.status === "closed";
+
+            return (
+                <Text mono dimColor={isClosed}>
+                    <Text color={STATUS_COLORS[statusOf(issue, blocked)]}>
+                        {markOf(issue, blocked)}
+                    </Text>{" "}
+                    <Text
+                        color={
+                            isClosed
+                                ? undefined
+                                : PRIORITY_COLORS[issue.priority]
+                        }
+                        weight={
+                            issue.priority === 0 && !isClosed
+                                ? "bold"
+                                : undefined
+                        }
+                    >
+                        P{issue.priority}
+                    </Text>
+                </Text>
+            );
+        };
+
+        /** One issue linked to the open card, in the columns of a list row: mark and priority, id, title. */
+        const drawLink = (issue: Issue, idWidth: number) => (
+            <Box
+                key={`link-${issue.id}`}
+                flexDirection="row"
+                alignItems="flex-start"
+            >
+                <Box width={MARK_WIDTH} flexShrink={0}>
+                    {drawMark(issue)}
+                </Box>
+                <Box width={idWidth} flexShrink={0}>
+                    <Text mono dimColor>
+                        {issue.id}
+                    </Text>
+                </Box>
+                <Box flexShrink={1}>
+                    <Text dimColor={issue.status === "closed"}>
+                        {issue.title}
+                    </Text>
+                </Box>
+            </Box>
+        );
+
+        /** The card of `issue`, drawn under its row while it is the open one. */
+        const drawCard = (issue: Issue, load: CardLoad | undefined) => (
+            <Box
+                key={`details-${issue.id}`}
+                flexDirection="column"
+                gap={1}
+                marginLeft={MARK_WIDTH}
+                borderStyle="round"
+                borderColor="subtle"
+                backgroundColor={
+                    e.surface === "terminal" ? undefined : CARD_BACKGROUND
+                }
+                paddingX={1}
+            >
+                {load === undefined ? (
+                    <Text dimColor>Loading…</Text>
+                ) : load.kind === "error" ? (
+                    <Text color="error">bd failed: {load.message}</Text>
+                ) : (
+                    [
+                        <Text key="facts" dimColor>
+                            {factsOf(issue, load.card, blocked)}
+                        </Text>,
+                        ...TEXTS.filter(
+                            ({ field }) => load.card[field] !== "",
+                        ).map(({ field, heading }) => (
+                            <Box key={field} flexDirection="column">
+                                <Text weight="bold">{heading}</Text>
+                                <Markdown text={load.card[field]} />
+                            </Box>
+                        )),
+                        ...LINKS.filter(
+                            ({ field }) => load.card[field].length > 0,
+                        ).map(({ field, heading }) => (
+                            <Box key={field} flexDirection="column">
+                                <Text weight="bold">
+                                    {heading}
+                                    {field === "children" ? (
+                                        <Text weight="regular" dimColor>
+                                            {" "}
+                                            {progressOf(load.card.children)}
+                                        </Text>
+                                    ) : null}
+                                </Text>
+                                {load.card[field].map((linked) =>
+                                    drawLink(linked, linkWidthOf(load.card)),
+                                )}
+                            </Box>
+                        )),
+                        ...(load.card.comments.length > 0
+                            ? [
+                                  <Box
+                                      key="comments"
+                                      flexDirection="column"
+                                      gap={1}
+                                  >
+                                      <Text weight="bold">Comments</Text>
+                                      {load.card.comments.map(
+                                          (comment, index) => (
+                                              <Box
+                                                  key={`comment-${index}`}
+                                                  flexDirection="column"
+                                              >
+                                                  <Text dimColor>
+                                                      {comment.author} ·{" "}
+                                                      {dayOf(
+                                                          comment.created_at,
+                                                      )}
+                                                  </Text>
+                                                  <Markdown
+                                                      text={comment.text}
+                                                  />
+                                              </Box>
+                                          ),
+                                      )}
+                                  </Box>,
+                              ]
+                            : []),
+                    ]
+                )}
+            </Box>
+        );
 
         return (
             <Box flexDirection="column" gap={1}>
@@ -269,44 +515,17 @@ export const register: Register = (on) => {
                     <Text dimColor>{empty}</Text>
                 ) : (
                     <Box flexDirection="column" rowGap="xs">
-                        {state.issues.map((issue) => {
+                        {state.issues.flatMap((issue) => {
                             const isClosed = issue.status === "closed";
 
-                            return (
+                            return [
                                 <Box
                                     key={`issue-${issue.id}`}
                                     flexDirection="row"
                                     alignItems="flex-start"
                                 >
                                     <Box width={MARK_WIDTH} flexShrink={0}>
-                                        <Text mono dimColor={isClosed}>
-                                            <Text
-                                                color={
-                                                    STATUS_COLORS[
-                                                        statusOf(issue, blocked)
-                                                    ]
-                                                }
-                                            >
-                                                {markOf(issue, blocked)}
-                                            </Text>{" "}
-                                            <Text
-                                                color={
-                                                    isClosed
-                                                        ? undefined
-                                                        : PRIORITY_COLORS[
-                                                              issue.priority
-                                                          ]
-                                                }
-                                                weight={
-                                                    issue.priority === 0 &&
-                                                    !isClosed
-                                                        ? "bold"
-                                                        : undefined
-                                                }
-                                            >
-                                                P{issue.priority}
-                                            </Text>
-                                        </Text>
+                                        {drawMark(issue)}
                                     </Box>
                                     <Box width={idWidth} flexShrink={0}>
                                         <Button
@@ -340,12 +559,23 @@ export const register: Register = (on) => {
                                         </Text>
                                     </Box>
                                     <Box flexShrink={1}>
-                                        <Text dimColor={isClosed}>
-                                            {issue.title}
-                                        </Text>
+                                        <Button
+                                            key={`card-${issue.id}`}
+                                            plain
+                                            onPress={() => {
+                                                void toggle($, issue.id);
+                                            }}
+                                        >
+                                            <Text dimColor={isClosed}>
+                                                {issue.title}
+                                            </Text>
+                                        </Button>
                                     </Box>
-                                </Box>
-                            );
+                                </Box>,
+                                ...(opened === issue.id
+                                    ? [drawCard(issue, card)]
+                                    : []),
+                            ];
                         })}
                     </Box>
                 )}

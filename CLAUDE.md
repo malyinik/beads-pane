@@ -43,6 +43,10 @@ npx -y -p typescript@5.6.3 tsc -p .
 - `bd list` stops at 50 issues and `bd ready` at 100 unless given `--limit 0`.
 - Without a database, `bd list` writes only text to stderr, while `bd where --json` reports `"error": "no_beads_directory"`.
 - `bd history <id> --json` fails on bd 1.2.2.
+- `bd show --json` prints an array of one issue; with `--include-dependents` and `--include-comments` it carries `dependents` and `comments`, and leaves `comments` out when there are none.
+- `bd show` prints as `Owner` the `created_by` actor (git `user.name`), while the JSON `owner` is git `user.email`.
+- A `relates-to` link appears in both `dependencies` and `dependents`.
+- The entries of `dependents` carry zero dates (`0001-01-01T00:00:00Z`).
 
 ## Implemented
 
@@ -68,3 +72,14 @@ Before reporting such a change as done, check the list against the code it touch
   - Types take `#D2A6FF` (epic), `#59C2FF` (feature), `#F26D78` (bug), `#95E6CB` (task) and `#A6ACB3` (any other).
   - Closed issues are drawn dim.
   - Pressing an id copies it, and a toast says whether the copy took.
+  - Pressing a title opens the issue's card under its row; pressing it again closes the card. One card is open at a time.
+- Card
+  - Read with one `bd show <id> --json --include-dependents --include-comments` each time it opens; the last read is kept in `beads-pane.cards` and drawn meanwhile, the open id in `beads-pane.expanded`.
+  - A facts line: status, owner (the `created_by` actor, as `bd show` prints it), assignee, labels, created and updated days, closing day and reason.
+  - Markdown sections `Description`, `Design`, `Acceptance criteria` and `Notes`, each only when bd has text for it.
+  - Linked issues in the columns of a list row (status mark and priority, id, title), with one id width across the card, grouped as `Parent`, `Depends on`, `Blocks`, `Children` and `Related`; a group without issues is left out.
+  - `Children` carries the epic's progress as bd prints it, `3/10 complete (30%)`.
+  - The card has a `subtle` rounded border and, outside the terminal, a translucent gray background `#8080801A`.
+  - `Comments`, oldest first, each with its author and day.
+  - Control characters other than tab and newline are stripped from bd's text, so a pasted carriage return cannot leave the pane undrawn.
+  - A failed read draws `bd failed:` with bd's message inside the card.

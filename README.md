@@ -7,6 +7,7 @@ The terminal (`terminal` surface) runs the same code.
 
 > **Status:** early development.
 > The `/beads-pane` command opens the pane and lists issues, filtered by `ready`, `blocked`, `open`, `closed` or `all`.
+> Pressing an issue's title opens its card: description, notes, linked issues and comments.
 > The list is read again on each run of the command.
 
 ## Requirements

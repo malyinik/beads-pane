@@ -1,6 +1,6 @@
 import { expect, mock, test } from "claude-code/testing";
 import type { On } from "claude-code";
-import type { Mounted } from "claude-code/testing";
+import type { Engine as Kit, Mounted } from "claude-code/testing";
 
 const SURFACES = ["terminal", "desktop"] as const;
 
@@ -833,5 +833,241 @@ test("closed issues come by closing time, the latest first, whatever their prior
         "✓ P3bp-2taskLate",
     ]);
     await bd.settle();
+    await ui.unmount();
+});
+
+/** An issue linked to a card, as `bd show --json` lists it among the dependencies or dependents. */
+function link(id: string, type: string, status = "open") {
+    return {
+        id,
+        title: `Title of ${id}`,
+        status,
+        priority: 2,
+        issue_type: "task",
+        created_at: "0001-01-01T00:00:00Z",
+        updated_at: "0001-01-01T00:00:00Z",
+        dependency_type: type,
+    };
+}
+
+/** The card of `bp-1.10` as `bd show --json --include-dependents --include-comments` prints it. */
+const SHOWN = JSON.stringify([
+    {
+        id: "bp-1.10",
+        title: "Second",
+        description: "Line one\r\nLine **two**",
+        design: "",
+        notes: "Some notes",
+        status: "in_progress",
+        priority: 1,
+        issue_type: "task",
+        assignee: "bob",
+        owner: "owner@example.com",
+        created_by: "carol",
+        created_at: "2026-10-20T08:00:00Z",
+        updated_at: "2026-10-28T09:30:00Z",
+        labels: ["core", "ui"],
+        dependencies: [
+            link("bp-9", "blocks", "closed"),
+            link("bp-7", "relates-to"),
+            link("bp-1", "parent-child"),
+        ],
+        dependents: [
+            link("bp-7", "relates-to"),
+            link("bp-8", "blocks", "in_progress"),
+        ],
+        comments: [
+            {
+                id: "c1",
+                issue_id: "bp-1.10",
+                author: "alice",
+                text: "Looks *fine*",
+                created_at: "2026-10-27T12:00:00Z",
+            },
+        ],
+        parent: "bp-1",
+    },
+]);
+
+/** Opens the pane on `LISTED` with `bd show` answered by `shown`, and returns the mounted pane and the bd runs. */
+async function opened($: Kit, on: On, shown: Answer | (() => Promise<Answer>)) {
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+        show: shown,
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+
+    return { bd, ui: await $.ui.mount({ ...PANE, surface: "desktop" }) };
+}
+
+test("pressing a title opens its card under the row with one bd show", async ($, on) => {
+    const { bd, ui: pressed } = await opened($, on, ran(0, SHOWN));
+    const before = bd.argvs.length;
+
+    await pressed.press({ key: "card-bp-1.10" });
+    expect(bd.argvs.slice(before)).toEqual([
+        [
+            "bd",
+            "show",
+            "bp-1.10",
+            "--json",
+            "--include-dependents",
+            "--include-comments",
+        ],
+    ]);
+    await pressed.unmount();
+
+    for (const surface of SURFACES) {
+        const ui = await $.ui.mount({ ...PANE, surface });
+        expect(
+            (await ui.findAll({ type: "Box" }))
+                .map((box) => box.key ?? "")
+                .filter((key) => /^(issue|details)-/.test(key)),
+        ).toEqual(["issue-bp-1", "issue-bp-1.10", "details-bp-1.10"]);
+        expect(
+            (
+                await exactText(
+                    ui,
+                    "in progress · owner carol · assignee bob · labels core, ui · created 2026-10-20 · updated 2026-10-28",
+                )
+            )?.props.dimColor,
+        ).toBe(true);
+        expect(
+            (await ui.findAll({ type: "Markdown" })).map(
+                (one) => one.props.text,
+            ),
+        ).toEqual(["Line one\nLine **two**", "Some notes", "Looks *fine*"]);
+        for (const heading of [
+            "Description",
+            "Notes",
+            "Parent",
+            "Depends on",
+            "Blocks",
+            "Related",
+            "Comments",
+        ]) {
+            expect(await exactText(ui, heading)).toBeDefined();
+        }
+        for (const heading of ["Design", "Acceptance criteria", "Children"]) {
+            expect(await exactText(ui, heading)).toBeUndefined();
+        }
+        expect(
+            (await ui.findAll({ type: "Box" }))
+                .filter((box) => box.key?.startsWith("link-"))
+                .map((box) => box.text),
+        ).toEqual([
+            "○ P2bp-1Title of bp-1",
+            "✓ P2bp-9Title of bp-9",
+            "◐ P2bp-8Title of bp-8",
+            "○ P2bp-7Title of bp-7",
+        ]);
+        expect(await exactText(ui, "alice · 2026-10-27")).toBeDefined();
+        await ui.unmount();
+    }
+});
+
+test("pressing the title of the open card closes it, and opening it again draws the last read at once", async ($, on) => {
+    let answers = 0;
+    let gate = Promise.resolve();
+    const { ui } = await opened($, on, async () => {
+        answers += 1;
+        await gate;
+
+        return ran(0, SHOWN);
+    });
+
+    await ui.press({ key: "card-bp-1.10" });
+    await ui.press({ key: "card-bp-1.10" });
+    expect(await ui.find({ key: "details-bp-1.10" })).toBeUndefined();
+    await ui.press({ key: "card-bp-1" });
+    expect(await ui.find({ key: "details-bp-1.10" })).toBeUndefined();
+    expect(await ui.find({ key: "details-bp-1" })).toBeDefined();
+
+    let release = () => {};
+    gate = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const pressing = ui.press({ key: "card-bp-1.10" });
+    expect(
+        (await ui.findAll({ type: "Markdown" })).map((one) => one.props.text),
+    ).toContain("Some notes");
+    expect(answers).toBe(3);
+    release();
+    await pressing;
+    await ui.unmount();
+});
+
+test("a card bd cannot read says why", async ($, on) => {
+    const { ui } = await opened(
+        $,
+        on,
+        ran(
+            1,
+            JSON.stringify({
+                error: "no issues found matching the provided IDs",
+            }),
+            'Error fetching bp-1.10: no issue found matching "bp-1.10"',
+        ),
+    );
+
+    await ui.press({ key: "card-bp-1.10" });
+    expect((await ui.find({ key: "details-bp-1.10" }))?.text).toBe(
+        'bd failed: Error fetching bp-1.10: no issue found matching "bp-1.10"',
+    );
+    await ui.unmount();
+});
+
+test("an epic's card counts its closed children, and linked issues share one id column", async ($, on) => {
+    const { ui } = await opened(
+        $,
+        on,
+        ran(
+            0,
+            JSON.stringify([
+                {
+                    id: "bp-1",
+                    title: "First",
+                    status: "open",
+                    priority: 0,
+                    issue_type: "epic",
+                    dependents: [
+                        link("bp-1.1", "parent-child", "closed"),
+                        link("bp-1.2", "parent-child"),
+                        link("bp-1.10", "parent-child"),
+                    ],
+                },
+            ]),
+        ),
+    );
+
+    await ui.press({ key: "card-bp-1" });
+    expect(
+        (await ui.findAll({ type: "Text" })).find((one) =>
+            one.text.startsWith("Children"),
+        )?.text,
+    ).toBe("Children 1/3 complete (33%)");
+    const widths = (await ui.findAll({ type: "Box" }))
+        .filter(
+            (box) =>
+                box.props.flexShrink === 0 &&
+                box.props.width !== "○ P0 ".length,
+        )
+        .map((box) => box.props.width);
+    expect(widths.slice(-3)).toEqual([
+        "bp-1.10 ".length,
+        "bp-1.10 ".length,
+        "bp-1.10 ".length,
+    ]);
+    expect(
+        (await ui.find({ key: "details-bp-1" }))?.props.backgroundColor,
+    ).toBe("#8080801A");
     await ui.unmount();
 });

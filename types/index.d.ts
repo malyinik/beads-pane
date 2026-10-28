@@ -32,8 +32,73 @@ export type Load =
 /** The last {@link Load} of each {@link Filter}; a filter never read yet has none. */
 export type Lists = Partial<Record<Filter, Load>>;
 
+/** One comment on an issue. */
+export type Comment = {
+    /** Who wrote it. */
+    author: string;
+    /** The comment's markdown. */
+    text: string;
+    /** When it was written, as an ISO 8601 UTC time. */
+    created_at: string;
+};
+
+/**
+ * What the card of one issue shows beyond its row: the texts, the people and dates, and the issues linked to it.
+ * A text bd leaves empty is an empty string, and a link group without issues is an empty list.
+ */
+export type Card = {
+    /** The issue's description, in markdown. */
+    description: string;
+    /** The issue's design notes, in markdown. */
+    design: string;
+    /** The issue's acceptance criteria, in markdown. */
+    acceptance_criteria: string;
+    /** The issue's notes, in markdown. */
+    notes: string;
+    /**
+     * Who owns the issue, as `bd show` prints it: the `created_by` actor, else the `owner` email.
+     * Empty when bd records neither.
+     */
+    owner: string;
+    /** Who the issue is assigned to; empty while nobody is. */
+    assignee: string;
+    /** The issue's labels, in bd's order. */
+    labels: string[];
+    /** When the issue was created, as an ISO 8601 UTC time. */
+    created_at: string;
+    /** When the issue last changed, as an ISO 8601 UTC time. */
+    updated_at: string;
+    /** Why the issue was closed; empty while it is open. */
+    close_reason: string;
+    /** The epic the issue belongs to. */
+    parent: Issue[];
+    /** The issues that block this one. */
+    depends_on: Issue[];
+    /** The issues this one blocks. */
+    blocks: Issue[];
+    /** The issues that belong to this one, when it is an epic. */
+    children: Issue[];
+    /** The issues linked to this one without blocking either way. */
+    related: Issue[];
+    /** The comments, oldest first. */
+    comments: Comment[];
+};
+
+/** What one read of an issue's card came to. */
+export type CardLoad =
+    | { kind: "error"; message: string }
+    | { kind: "ready"; card: Card };
+
+/** The last {@link CardLoad} of each issue whose card was opened, by issue id. */
+export type Cards = Record<string, CardLoad>;
+
 declare module "claude-code" {
     interface PluginState {
-        "beads-pane": { lists: Shaped<Lists>; filter: Shaped<Filter> };
+        "beads-pane": {
+            lists: Shaped<Lists>;
+            filter: Shaped<Filter>;
+            expanded: Shaped<string | null>;
+            cards: Shaped<Cards>;
+        };
     }
 }
