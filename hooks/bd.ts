@@ -6,7 +6,16 @@ import type { Filter, Issue, Load } from "../types";
 const COMMANDS: Record<Filter, readonly string[]> = {
     ready: ["bd", "ready", "--json", "--limit", "0"],
     blocked: ["bd", "blocked", "--json"],
-    open: ["bd", "list", "--json", "--limit", "0", "--status", "open,in_progress,blocked"],
+    open: [
+        "bd",
+        "list",
+        "--json",
+        "--limit",
+        "0",
+        "--status",
+        "open,in_progress,blocked",
+    ],
+    closed: ["bd", "list", "--json", "--limit", "0", "--status", "closed"],
     all: ["bd", "list", "--all", "--json", "--limit", "0"],
 };
 
@@ -21,7 +30,10 @@ const NO_DATABASE = "no_beads_directory";
  * The issues come sorted by priority, then by id.
  * Never rejects: a bd that fails or cannot start comes back as an `error` load.
  */
-export async function fetchLoad($: EngineInterface, filter: Filter): Promise<Load> {
+export async function fetchLoad(
+    $: EngineInterface,
+    filter: Filter,
+): Promise<Load> {
     let listed: ProcessRunResult;
     try {
         listed = await $.process.run(COMMANDS[filter]);
@@ -39,8 +51,7 @@ export async function fetchLoad($: EngineInterface, filter: Filter): Promise<Loa
     return issues === undefined
         ? {
               kind: "error",
-              message:
-                  "bd printed something other than a JSON list of issues.",
+              message: "bd printed something other than a JSON list of issues.",
           }
         : { kind: "ready", issues: issues.sort(byPriority) };
 }
@@ -119,7 +130,10 @@ function parseIssues(text: string): Issue[] | undefined {
 
 /** Orders issues by priority, the most urgent first, then by id with numeric parts compared as numbers. */
 function byPriority(a: Issue, b: Issue): number {
-    return a.priority - b.priority || a.id.localeCompare(b.id, "en", { numeric: true });
+    return (
+        a.priority - b.priority ||
+        a.id.localeCompare(b.id, "en", { numeric: true })
+    );
 }
 
 /** `JSON.parse` that returns `undefined` instead of throwing. */

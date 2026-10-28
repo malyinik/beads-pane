@@ -14,9 +14,9 @@ export type Issue = {
 
 /**
  * Which issues the pane lists, each read by its own bd command.
- * `ready` has no open blockers, `blocked` waits on another issue, `open` is everything neither closed nor deferred, `all` includes both.
+ * `ready` has no open blockers, `blocked` waits on another issue, `open` is everything neither closed nor deferred, `closed` is what was closed, `all` includes everything.
  */
-export type Filter = "ready" | "blocked" | "open" | "all";
+export type Filter = "ready" | "blocked" | "open" | "closed" | "all";
 
 /**
  * What one read of the session's beads database came to.

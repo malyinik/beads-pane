@@ -28,13 +28,32 @@ const TYPED = {
 
 /** Two issues as bd prints them, the less urgent first and with fields the pane drops. */
 const LISTED = JSON.stringify([
-    { id: "bp-1.10", title: "Second", status: "in_progress", priority: 1, issue_type: "task" },
-    { id: "bp-1", title: "First", status: "open", priority: 0, issue_type: "epic", description: "long" },
+    {
+        id: "bp-1.10",
+        title: "Second",
+        status: "in_progress",
+        priority: 1,
+        issue_type: "task",
+    },
+    {
+        id: "bp-1",
+        title: "First",
+        status: "open",
+        priority: 0,
+        issue_type: "epic",
+        description: "long",
+    },
 ]);
 
 /** One ready issue as `bd ready --json` prints it. */
 const READY = JSON.stringify([
-    { id: "bp-2", title: "Ready one", status: "open", priority: 2, issue_type: "bug" },
+    {
+        id: "bp-2",
+        title: "Ready one",
+        status: "open",
+        priority: 2,
+        issue_type: "bug",
+    },
 ]);
 
 /** The rows of the issue list, the text of each in drawing order. */
@@ -159,36 +178,70 @@ test("the pane draws a placeholder before the first load", async ($) => {
 
 /** The innermost Text whose whole text is `text`, as the priority of a row is drawn. */
 async function exactText(ui: Pick<Mounted, "findAll">, text: string) {
-    return (await ui.findAll({ type: "Text" })).find((one) => one.text === text);
+    return (await ui.findAll({ type: "Text" })).find(
+        (one) => one.text === text,
+    );
 }
 
 /** The bd command of each filter, as the pane runs them. */
 const COMMANDS = {
     ready: ["bd", "ready", "--json", "--limit", "0"],
     blocked: ["bd", "blocked", "--json"],
-    open: ["bd", "list", "--json", "--limit", "0", "--status", "open,in_progress,blocked"],
+    open: [
+        "bd",
+        "list",
+        "--json",
+        "--limit",
+        "0",
+        "--status",
+        "open,in_progress,blocked",
+    ],
+    closed: ["bd", "list", "--json", "--limit", "0", "--status", "closed"],
     all: ["bd", "list", "--all", "--json", "--limit", "0"],
 };
 
 test("the pane lists open issues by priority, with status, priority, id, type and title", async ($, on) => {
-    const bd = engine(on, { list: ran(0, LISTED), ready: ran(0, "[]"), blocked: ran(0, "[]") });
-    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
     await $.command.run(TYPED);
     await bd.settle();
 
     for (const surface of SURFACES) {
         const ui = await $.ui.mount({ ...PANE, surface });
 
-        expect(await rows(ui)).toEqual(["○ P0bp-1epicFirst", "◐ P1bp-1.10taskSecond"]);
-        expect((await ui.find({ key: "filter-open" }))?.props.variant).toBe("primary");
-        expect((await ui.find({ key: "filter-ready" }))?.props.variant).toBe("secondary");
+        expect(await rows(ui)).toEqual([
+            "○ P0bp-1epicFirst",
+            "◐ P1bp-1.10taskSecond",
+        ]);
+        expect((await ui.find({ key: "filter-open" }))?.props.variant).toBe(
+            "primary",
+        );
+        expect((await ui.find({ key: "filter-ready" }))?.props.variant).toBe(
+            "secondary",
+        );
         await ui.unmount();
     }
 });
 
 test("every column takes one width, so the titles start in the same column", async ($, on) => {
-    const bd = engine(on, { list: ran(0, LISTED), ready: ran(0, "[]"), blocked: ran(0, "[]") });
-    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
     await $.command.run(TYPED);
     await bd.settle();
     const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
@@ -211,26 +264,57 @@ test("priorities take bd's colors, P3 and P4 plain", async ($, on) => {
             issue_type: "task",
         })),
     );
-    const bd = engine(on, { list: ran(0, issues), ready: ran(0, "[]"), blocked: ran(0, "[]") });
-    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    const bd = engine(on, {
+        list: ran(0, issues),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
     await $.command.run(TYPED);
     await bd.settle();
     const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
 
     const colors = await Promise.all(
-        [0, 1, 2, 3, 4].map(async (priority) => (await exactText(ui, `P${priority}`))?.props.color),
+        [0, 1, 2, 3, 4].map(
+            async (priority) =>
+                (await exactText(ui, `P${priority}`))?.props.color,
+        ),
     );
-    expect(colors).toEqual(["#F07178", "#FF8F40", "#E6B450", undefined, undefined]);
+    expect(colors).toEqual([
+        "#F07178",
+        "#FF8F40",
+        "#E6B450",
+        undefined,
+        undefined,
+    ]);
     await ui.unmount();
 });
 
 test("the command reads the chosen filter first, then the others in the background", async ($, on) => {
-    const bd = engine(on, { list: ran(0, LISTED), ready: ran(0, READY), blocked: ran(0, "[]") });
-    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, READY),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
     await $.command.run(TYPED);
     await bd.settle();
 
-    expect(bd.argvs).toEqual([COMMANDS.open, COMMANDS.ready, COMMANDS.blocked, COMMANDS.all]);
+    expect(bd.argvs).toEqual([
+        COMMANDS.open,
+        COMMANDS.ready,
+        COMMANDS.blocked,
+        COMMANDS.closed,
+        COMMANDS.all,
+    ]);
 });
 
 test("a filter button draws the filter's last read at once, then reads it again", async ($, on) => {
@@ -240,7 +324,11 @@ test("a filter button draws the filter's last read at once, then reads it again"
         ready: async () => readyAnswer,
         blocked: ran(0, "[]"),
     });
-    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
     await $.command.run(TYPED);
     await bd.settle();
     const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
@@ -249,8 +337,12 @@ test("a filter button draws the filter's last read at once, then reads it again"
 
     await ui.press({ key: "filter-ready" });
     expect(bd.argvs.slice(before)).toEqual([COMMANDS.ready]);
-    expect((await ui.find({ key: "filter-ready" }))?.props.variant).toBe("primary");
-    expect((await ui.find({ key: "filter-open" }))?.props.variant).toBe("secondary");
+    expect((await ui.find({ key: "filter-ready" }))?.props.variant).toBe(
+        "primary",
+    );
+    expect((await ui.find({ key: "filter-open" }))?.props.variant).toBe(
+        "secondary",
+    );
     expect((await ui.find({ type: "Text" }))?.text).toBe("No ready issues.");
 
     await $.command.run(TYPED);
@@ -273,7 +365,11 @@ test("a filter never read says it is loading while bd answers", async ($, on) =>
             return ran(0, "[]");
         },
     });
-    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
     const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
     await ui.press({ key: "filter-open" });
 
@@ -286,24 +382,54 @@ test("a filter never read says it is loading while bd answers", async ($, on) =>
 });
 
 test("each filter runs its own bd command", async ($, on) => {
-    const bd = engine(on, { list: ran(0, "[]"), ready: ran(0, "[]"), blocked: ran(0, "[]") });
-    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    const bd = engine(on, {
+        list: ran(0, "[]"),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
     const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
 
-    for (const key of ["filter-ready", "filter-blocked", "filter-open", "filter-all"]) {
+    for (const key of [
+        "filter-ready",
+        "filter-blocked",
+        "filter-open",
+        "filter-closed",
+        "filter-all",
+    ]) {
         await ui.press({ key });
     }
-    expect(bd.argvs).toEqual([COMMANDS.ready, COMMANDS.blocked, COMMANDS.open, COMMANDS.all]);
+    expect(bd.argvs).toEqual([
+        COMMANDS.ready,
+        COMMANDS.blocked,
+        COMMANDS.open,
+        COMMANDS.closed,
+        COMMANDS.all,
+    ]);
     expect((await ui.find({ type: "Text" }))?.text).toBe("No issues.");
     await ui.unmount();
 });
 
 test("closed issues are drawn dim, their priority uncolored", async ($, on) => {
     const closed = JSON.stringify([
-        { id: "bp-3", title: "Done", status: "closed", priority: 0, issue_type: "task" },
+        {
+            id: "bp-3",
+            title: "Done",
+            status: "closed",
+            priority: 0,
+            issue_type: "task",
+        },
     ]);
     const bd = engine(on, { list: ran(0, closed) });
-    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
     const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
 
     await ui.press({ key: "filter-all" });
@@ -443,23 +569,43 @@ test("types take their own colors, the rest one tone between gray and plain", as
             issue_type: type,
         })),
     );
-    const bd = engine(on, { list: ran(0, typed), ready: ran(0, "[]"), blocked: ran(0, "[]") });
-    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    const bd = engine(on, {
+        list: ran(0, typed),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
     await $.command.run(TYPED);
     await bd.settle();
     const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
 
     const colors = await Promise.all(
-        ["epic", "feature", "bug", "task", "chore"].map(async (type) => (await exactText(ui, type))?.props.color),
+        ["epic", "feature", "bug", "task", "chore"].map(
+            async (type) => (await exactText(ui, type))?.props.color,
+        ),
     );
-    expect(colors).toEqual(["#D2A6FF", "#59C2FF", "#F26D78", "#95E6CB", "#A6ACB3"]);
+    expect(colors).toEqual([
+        "#D2A6FF",
+        "#59C2FF",
+        "#F26D78",
+        "#95E6CB",
+        "#A6ACB3",
+    ]);
     await ui.unmount();
 });
 
 test("pressing an id copies it on the surface it was pressed on and says so", async ($, on) => {
     const copied: unknown[] = [];
     const toasts: string[] = [];
-    const bd = engine(on, { list: ran(0, LISTED), ready: ran(0, "[]"), blocked: ran(0, "[]") });
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
     on("ui.copy", (_, e) => {
         copied.push(e);
 
@@ -470,7 +616,11 @@ test("pressing an id copies it on the surface it was pressed on and says so", as
 
         return { value: undefined };
     });
-    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
     await $.command.run(TYPED);
     await bd.settle();
     const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
@@ -483,19 +633,31 @@ test("pressing an id copies it on the surface it was pressed on and says so", as
 
 test("a copy the surface refuses says why", async ($, on) => {
     const toasts: string[] = [];
-    const bd = engine(on, { list: ran(0, LISTED), ready: ran(0, "[]"), blocked: ran(0, "[]") });
-    on("ui.copy", () => ({ value: { isCopied: false, reason: "no-clipboard" } }));
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    on("ui.copy", () => ({
+        value: { isCopied: false, reason: "no-clipboard" },
+    }));
     on("ui.toast", (_, e) => {
         toasts.push(e.text);
 
         return { value: undefined };
     });
-    await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
     await $.command.run(TYPED);
     await bd.settle();
     const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
 
     await ui.press({ key: "copy-bp-1" });
-    expect(toasts).toEqual(["Could not copy bp-1: the clipboard is not reachable"]);
+    expect(toasts).toEqual([
+        "Could not copy bp-1: the clipboard is not reachable",
+    ]);
     await ui.unmount();
 });

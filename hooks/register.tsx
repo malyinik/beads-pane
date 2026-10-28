@@ -44,6 +44,12 @@ const FILTERS: readonly {
         empty: "No blocked issues.",
     },
     { filter: "open", label: "Open", hotkey: "o", empty: "No open issues." },
+    {
+        filter: "closed",
+        label: "Closed",
+        hotkey: "c",
+        empty: "No closed issues.",
+    },
     { filter: "all", label: "All", hotkey: "a", empty: "No issues." },
 ];
 
@@ -87,7 +93,10 @@ async function choose($: EngineInterface, chosen: Filter): Promise<void> {
  * Reads the issues of every filter but `chosen`, one after another, so a later switch draws at once.
  * bd runs are not started together because concurrent reads of its embedded database are slower than serial ones.
  */
-async function refreshOthers($: EngineInterface, chosen: Filter): Promise<void> {
+async function refreshOthers(
+    $: EngineInterface,
+    chosen: Filter,
+): Promise<void> {
     for (const one of FILTERS) {
         if (one.filter !== chosen) {
             await refresh($, one.filter);
@@ -113,12 +122,17 @@ const TYPE_COLOR = "#A6ACB3";
 const MARK_WIDTH = "○ P0 ".length;
 
 /** The widest value of `field` among `issues`, plus the space after the column. */
-function columnWidth(issues: readonly Issue[], field: (issue: Issue) => string): number {
+function columnWidth(
+    issues: readonly Issue[],
+    field: (issue: Issue) => string,
+): number {
     return Math.max(0, ...issues.map((issue) => field(issue).length)) + 1;
 }
 
 /** What the toast says for each reason a copy did not take. */
-const COPY_FAILURES: Readonly<Record<"no-surface" | "no-clipboard" | "refused", string>> = {
+const COPY_FAILURES: Readonly<
+    Record<"no-surface" | "no-clipboard" | "refused", string>
+> = {
     "no-surface": "nothing to copy on",
     "no-clipboard": "the clipboard is not reachable",
     refused: "the copy was refused",
@@ -127,9 +141,17 @@ const COPY_FAILURES: Readonly<Record<"no-surface" | "no-clipboard" | "refused", 
 /**
  * Puts an issue id on the clipboard of the surface it was pressed on and says how that went in a toast.
  */
-async function copyId($: EngineInterface, id: string, surface: RenderSurface): Promise<void> {
+async function copyId(
+    $: EngineInterface,
+    id: string,
+    surface: RenderSurface,
+): Promise<void> {
     const copied = await $.ui.copy({ text: id, surface });
-    $.ui.toast(copied.isCopied ? `Copied ${id}` : `Could not copy ${id}: ${COPY_FAILURES[copied.reason]}`);
+    $.ui.toast(
+        copied.isCopied
+            ? `Copied ${id}`
+            : `Could not copy ${id}: ${COPY_FAILURES[copied.reason]}`,
+    );
 }
 
 /**
@@ -203,7 +225,9 @@ export const register: Register = (on) => {
                 </Box>
                 {state === undefined ? (
                     <Text dimColor>
-                        {Object.keys(all).length === 0 ? "No issues loaded yet." : "Loading…"}
+                        {Object.keys(all).length === 0
+                            ? "No issues loaded yet."
+                            : "Loading…"}
                     </Text>
                 ) : state.kind === "error" ? (
                     <Text color="error">bd failed: {state.message}</Text>
@@ -215,13 +239,27 @@ export const register: Register = (on) => {
                             const isClosed = issue.status === "closed";
 
                             return (
-                                <Box key={`issue-${issue.id}`} flexDirection="row">
+                                <Box
+                                    key={`issue-${issue.id}`}
+                                    flexDirection="row"
+                                >
                                     <Box width={MARK_WIDTH} flexShrink={0}>
                                         <Text mono dimColor={isClosed}>
                                             {STATUS_MARKS[issue.status] ?? "?"}{" "}
                                             <Text
-                                                color={isClosed ? undefined : PRIORITY_COLORS[issue.priority]}
-                                                weight={issue.priority === 0 && !isClosed ? "bold" : undefined}
+                                                color={
+                                                    isClosed
+                                                        ? undefined
+                                                        : PRIORITY_COLORS[
+                                                              issue.priority
+                                                          ]
+                                                }
+                                                weight={
+                                                    issue.priority === 0 &&
+                                                    !isClosed
+                                                        ? "bold"
+                                                        : undefined
+                                                }
                                             >
                                                 P{issue.priority}
                                             </Text>
@@ -233,7 +271,11 @@ export const register: Register = (on) => {
                                             plain
                                             dimColor
                                             onPress={(press) => {
-                                                void copyId($, issue.id, press.surface);
+                                                void copyId(
+                                                    $,
+                                                    issue.id,
+                                                    press.surface,
+                                                );
                                             }}
                                         >
                                             <Text mono>{issue.id}</Text>
@@ -243,13 +285,21 @@ export const register: Register = (on) => {
                                         <Text
                                             mono
                                             dimColor={isClosed}
-                                            color={isClosed ? undefined : (TYPE_COLORS[issue.issue_type] ?? TYPE_COLOR)}
+                                            color={
+                                                isClosed
+                                                    ? undefined
+                                                    : (TYPE_COLORS[
+                                                          issue.issue_type
+                                                      ] ?? TYPE_COLOR)
+                                            }
                                         >
                                             {issue.issue_type}
                                         </Text>
                                     </Box>
                                     <Box flexShrink={1}>
-                                        <Text dimColor={isClosed}>{issue.title}</Text>
+                                        <Text dimColor={isClosed}>
+                                            {issue.title}
+                                        </Text>
                                     </Box>
                                 </Box>
                             );
