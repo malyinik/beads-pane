@@ -1,0 +1,6 @@
+{
+    "name": "beads-pane",
+    "description": "Claude Code plugin that shows beads (bd) issues in a side pane next to the chat",
+    "owner": { "name": "malyinik" },
+    "plugins": [{ "name": "beads-pane", "source": "./" }]
+}
