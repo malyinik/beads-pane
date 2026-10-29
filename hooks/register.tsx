@@ -2,7 +2,7 @@ import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register, RenderSurface } from "claude-code";
 
 import type { Card, CardLoad, Filter, Issue, Load } from "../types";
-import { fetchCard, fetchLoad, fetchVersion } from "./bd";
+import { fetchCard, fetchLoad, fetchProgress, fetchVersion } from "./bd";
 
 /** Id of the side pane, shared by `$.ui.open` and the `Pane` render hook. */
 export const PANE = "beads";
@@ -45,6 +45,13 @@ const cards = atom(
 const working = atom({ plugin: "beads-pane", key: "working" } as const, null, {
     shape: "working-1",
 });
+
+/** The progress of each open epic as last read, drawn before the epic's title; a failed read leaves the last one. */
+const progress = atom(
+    { plugin: "beads-pane", key: "progress" } as const,
+    {},
+    { shape: "progress-1" },
+);
 
 /** The filter switch above the list, in the order its buttons are drawn. */
 const FILTERS: readonly {
@@ -130,7 +137,7 @@ async function choose($: EngineInterface, chosen: Filter): Promise<void> {
 }
 
 /**
- * Reads the issues in progress, then the issues of every filter but `chosen`, one after another, so a later switch draws at once.
+ * Reads the issues in progress, the progress of the epics, then the issues of every filter but `chosen`, one after another, so a later switch draws at once.
  * bd runs are not started together because concurrent reads of its embedded database are slower than serial ones.
  */
 async function refreshOthers(
@@ -139,6 +146,10 @@ async function refreshOthers(
 ): Promise<void> {
     const loaded = await fetchLoad($, "in_progress");
     await update($, working, () => loaded);
+    const counted = await fetchProgress($);
+    if (counted !== undefined) {
+        await update($, progress, () => counted);
+    }
     for (const one of FILTERS) {
         if (one.filter !== chosen) {
             await refresh($, one.filter);
@@ -166,7 +177,7 @@ async function toggle($: EngineInterface, id: string): Promise<void> {
 }
 
 /**
- * Reads again everything the pane draws: the chosen filter, then the issues in progress and the other filters one by one, then the open card.
+ * Reads again everything the pane draws: the chosen filter, then the issues in progress, the epics' progress and the other filters one by one, then the open card.
  * The others and the card are left alone when the chosen filter's read fails.
  */
 async function refreshAll($: EngineInterface): Promise<void> {
@@ -427,7 +438,7 @@ const FILL_FAILURES: Readonly<
 /**
  * Registers the `/beads-pane` command and draws the beads pane.
  * The pane opens only on the command, never unasked at session start.
- * Each run of the command reads the chosen filter from bd again, then the issues in progress and the other filters in the background.
+ * Each run of the command reads the chosen filter from bd again, then the issues in progress, the epics' progress and the other filters in the background.
  * While the pane is open, it is read again on its `Refresh` button, and at the end of each turn of the main loop and after each Bash command that runs bd when bd's database changed.
  */
 export const register: Register = (on) => {
@@ -496,6 +507,7 @@ export const register: Register = (on) => {
             );
         }
 
+        const counts = await read($, progress);
         const inProgress = await read($, working);
         const pinned = inProgress?.kind === "ready" ? inProgress.issues : [];
         const isPinned = new Set(pinned.map((issue) => issue.id));
@@ -669,12 +681,13 @@ export const register: Register = (on) => {
         );
 
         /**
-         * The row of `issue` in the columns of the list: mark and priority, id, type, title.
+         * The row of `issue` in the columns of the list: mark and priority, id, type, title, and before the title of an epic its closed children of all, as `(7/10)`.
          * Under it comes its card while it is the open one and `hasCard` is set, so an issue pinned atop the pane draws its card there alone.
          * `prefix` keeps the keys of the pinned rows apart from the list's own.
          */
         const drawRow = (issue: Issue, prefix: string, hasCard: boolean) => {
             const isClosed = issue.status === "closed";
+            const count = counts[issue.id];
 
             return [
                 <Box
@@ -719,7 +732,11 @@ export const register: Register = (on) => {
                                 void toggle($, issue.id);
                             }}
                         >
-                            <Text dimColor={isClosed}>{issue.title}</Text>
+                            <Text dimColor={isClosed}>
+                                {count === undefined
+                                    ? issue.title
+                                    : `(${count.closed}/${count.total}) ${issue.title}`}
+                            </Text>
                         </Button>
                     </Box>
                 </Box>,

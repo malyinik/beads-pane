@@ -1,6 +1,14 @@
 import type { EngineInterface, ProcessRunResult } from "claude-code";
 
-import type { Card, CardLoad, Comment, Issue, Listing, Load } from "../types";
+import type {
+    Card,
+    CardLoad,
+    Comment,
+    Issue,
+    Listing,
+    Load,
+    Progresses,
+} from "../types";
 
 /** The bd command that reads each {@link Listing}, with no limit on the number of issues. */
 const COMMANDS: Record<Listing, readonly string[]> = {
@@ -87,6 +95,42 @@ export async function fetchCard(
               message: "bd printed something other than a JSON issue.",
           }
         : { kind: "ready", card };
+}
+
+/** `bd epic status`, which counts the children of every open epic and leaves out an epic without children. */
+const EPICS = ["bd", "epic", "status", "--json"] as const;
+
+/**
+ * Reads how far every open epic has come with one `bd epic status`.
+ * `undefined` when bd fails, cannot start or prints something other than a list of epics.
+ * Never rejects.
+ */
+export async function fetchProgress(
+    $: EngineInterface,
+): Promise<Progresses | undefined> {
+    const run = await $.process.run(EPICS).catch(() => undefined);
+    const value = run?.exitCode === 0 ? parseJson(run.stdout) : undefined;
+    if (!Array.isArray(value)) {
+        return undefined;
+    }
+    const progress: Progresses = {};
+    for (const entry of value) {
+        if (
+            !isRecord(entry) ||
+            !isRecord(entry.epic) ||
+            typeof entry.epic.id !== "string" ||
+            typeof entry.closed_children !== "number" ||
+            typeof entry.total_children !== "number"
+        ) {
+            return undefined;
+        }
+        progress[entry.epic.id] = {
+            closed: entry.closed_children,
+            total: entry.total_children,
+        };
+    }
+
+    return progress;
 }
 
 /**

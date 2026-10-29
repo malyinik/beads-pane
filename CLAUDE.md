@@ -71,6 +71,7 @@ Before reporting such a change as done, check the list against the code it touch
   - Rows in columns: status mark, priority, id, type, title; a long title wraps within its column.
   - `Closed` lists the latest closed first; the other filters go by priority, then by id.
   - Status marks, priorities and types are colored after bd; an open issue blocked by another gets the blocked mark; closed issues are dim.
+  - An open epic with children leads its title, in the list and in `In progress`, with its closed children of all, as `(7/10)`.
   - Pressing an id copies it; pressing a title opens the issue's card under its row, and pressing it again closes it. One card is open at a time.
 - Card
   - A facts line: status, owner, assignee, labels, created and updated days, closing day and reason.

@@ -99,7 +99,8 @@ type Engine = {
 };
 
 /**
- * Answers the engine calls `/beads-pane` makes, with `bd` answered by subcommand from `runs`, but for the listing of the issues in progress, answered from `runs.in_progress` or else with no issues.
+ * Answers the engine calls `/beads-pane` makes, with `bd` answered by subcommand from `runs`, but for the listing of the issues in progress, answered from `runs.in_progress`.
+ * The issues in progress and `bd epic status` come back empty when `runs` has no answer for them.
  * A `{ deny }` answer makes that run reject, as when bd cannot start, and a function answers when its promise settles.
  * Answers `ui.panes` with the panes `ui.open` was asked for, the end of a turn with its answer, the working directory with `/repo`, `fs.read` from `files`, a path missing there being refused, and the prompt box from `box`, which a draft replaces or extends.
  * Returns the argument vectors bd was run with, the prompt box and its drafts, `settle`, which waits out the reads the command left running, and the mocked clock.
@@ -159,9 +160,14 @@ function engine(
     });
     on("process.run", async (_, e) => {
         argvs.push([...e.argv]);
-        const answer = e.argv.includes("in_progress")
-            ? (runs.in_progress ?? ran(0, "[]"))
-            : runs[e.argv[1] ?? ""];
+        const subcommand = e.argv.includes("in_progress")
+            ? "in_progress"
+            : (e.argv[1] ?? "");
+        const answer =
+            runs[subcommand] ??
+            (subcommand === "in_progress" || subcommand === "epic"
+                ? ran(0, "[]")
+                : undefined);
         if (typeof answer === "function") {
             return await answer();
         }
@@ -267,6 +273,9 @@ const IN_PROGRESS = [
     "--status",
     "in_progress",
 ];
+
+/** The bd command that counts the children of the open epics. */
+const EPICS = ["bd", "epic", "status", "--json"];
 
 test("the pane lists open issues by priority, with status, priority, id, type and title", async ($, on) => {
     const bd = engine(on, {
@@ -406,7 +415,7 @@ test("status marks take bd's colors but an ice blue for deferred", async ($, on)
     await ui.unmount();
 });
 
-test("the command reads the chosen filter first, then the issues in progress and the others in the background", async ($, on) => {
+test("the command reads the chosen filter first, then the issues in progress, the epics' progress and the others in the background", async ($, on) => {
     const bd = engine(on, {
         list: ran(0, LISTED),
         ready: ran(0, READY),
@@ -423,6 +432,7 @@ test("the command reads the chosen filter first, then the issues in progress and
     expect(bd.argvs).toEqual([
         COMMANDS.open,
         IN_PROGRESS,
+        EPICS,
         COMMANDS.ready,
         COMMANDS.blocked,
         COMMANDS.closed,
@@ -1341,6 +1351,67 @@ test("a filter button counts the issues of the filter's last read, and has no nu
     await ui.unmount();
 });
 
+/** The progress of epics as `bd epic status --json` prints it, with fields the pane drops. */
+function epics(...counts: [id: string, closed: number, total: number][]) {
+    return JSON.stringify(
+        counts.map(([id, closed, total]) => ({
+            epic: { id, title: id, status: "open", issue_type: "epic" },
+            total_children: total,
+            closed_children: closed,
+            eligible_for_close: false,
+        })),
+    );
+}
+
+test("an epic's title is led by its closed children of all in the list and atop the pane, and a failed count keeps the last", async ($, on) => {
+    let epicStatus = ran(0, epics(["bp-1", 1, 3], ["bp-5", 2, 4]));
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+        in_progress: ran(
+            0,
+            JSON.stringify([
+                {
+                    id: "bp-5",
+                    title: "Pinned",
+                    status: "in_progress",
+                    priority: 1,
+                    issue_type: "epic",
+                },
+            ]),
+        ),
+        get epic() {
+            return epicStatus;
+        },
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    expect(await rows(ui)).toEqual([
+        "○ P0bp-1epic(1/3) First",
+        "◐ P1bp-1.10taskSecond",
+    ]);
+    expect((await ui.find({ key: "pinned-issue-bp-5" }))?.text).toBe(
+        "◐ P1bp-5epic(2/4) Pinned",
+    );
+
+    epicStatus = ran(1, "", "Error: database is locked");
+    await ui.press({ key: "refresh" });
+    expect((await rows(ui))[0]).toBe("○ P0bp-1epic(1/3) First");
+
+    epicStatus = ran(0, epics());
+    await ui.press({ key: "refresh" });
+    expect((await rows(ui))[0]).toBe("○ P0bp-1epicFirst");
+    await ui.unmount();
+});
+
 /** The end of a turn of the main loop, as the engine raises it. */
 const TURN_END = {
     answer: "",
@@ -1353,10 +1424,11 @@ const TURN_END = {
 /** `bd where`, which a reload check runs while it does not know where the database is. */
 const WHERE = ["bd", "where", "--json"];
 
-/** Every filter read again, the pane's chosen `open` first and the issues in progress next, as one reload runs them. */
+/** Every filter read again, the pane's chosen `open` first, then the issues in progress and the epics' progress, as one reload runs them. */
 const RELOAD = [
     COMMANDS.open,
     IN_PROGRESS,
+    EPICS,
     COMMANDS.ready,
     COMMANDS.blocked,
     COMMANDS.closed,

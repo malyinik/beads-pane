@@ -35,6 +35,17 @@ export type Load =
 /** The last {@link Load} of each {@link Filter}; a filter never read yet has none. */
 export type Lists = Partial<Record<Filter, Load>>;
 
+/** How far one epic has come: how many of its children are closed, of how many. */
+export type Progress = {
+    /** The closed children. */
+    closed: number;
+    /** All the children. */
+    total: number;
+};
+
+/** The {@link Progress} of each open epic that has children, by epic id. */
+export type Progresses = Record<string, Progress>;
+
 /** One comment on an issue. */
 export type Comment = {
     /** Who wrote it. */
@@ -103,6 +114,7 @@ declare module "claude-code" {
             expanded: Shaped<string | null>;
             cards: Shaped<Cards>;
             working: Shaped<Load | null>;
+            progress: Shaped<Progresses>;
         };
     }
 }
