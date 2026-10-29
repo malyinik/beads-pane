@@ -53,48 +53,35 @@ npx -y -p typescript@5.6.3 tsc -p .
 
 ## Implemented
 
-This list is the map of what the plugin does today, and it must match the code.
+This list is the map of what the plugin does today, as the person using it sees it, and it must match the code.
+It names features, not how they are built: bd commands, state keys, colors and read order are left to the code.
 Any change that adds, changes or removes behaviour updates this list in the same commit: a new item for a new feature, an edited item for a changed one, a deleted item for a removed one.
 Before reporting such a change as done, check the list against the code it touched.
 
 - `/beads-pane` opens the pane; nothing opens it at session start.
-- Loading
-  - Each run of the command reads the chosen filter, then the issues in progress and the other filters one by one in the background.
-  - Every filter keeps its last read in `beads-pane.lists`, so a switch draws at once while bd reads that filter again.
-  - While the pane is open, everything it draws is read again on the `Refresh` button (hotkey `u`), and at the end of each main-loop turn and after each Bash command that runs `bd` anywhere in it (`cd repo && bd close x` too) when the database version changed.
-  - The database version is the text of the embedded database's `manifest`, found through `bd where` and `metadata.json` once per working directory; when it cannot be read, as with a Dolt server, those triggers always read.
-  - Such a reload reads the chosen filter, then the issues in progress, then the other filters, then the open card; one asked for while another runs makes that one read once more instead of starting a second.
-  - The pane draws four states besides the list: not loaded yet, loading, no beads database (with a `bd init` hint) and a bd error.
+- `In progress`, atop the pane, keeps the issues in progress in view whatever the filter, and is left out while there are none.
 - Filters
-  - Buttons `Ready`, `Blocked`, `Open`, `Closed` and `All`, with the hotkeys `r`, `b`, `o`, `c` and `a`.
-  - The choice is kept in `beads-pane.filter`; `Open` is the default.
+  - Buttons `Ready`, `Blocked`, `Open`, `Closed` and `All`, with the hotkeys `r`, `b`, `o`, `c` and `a`; `Open` is the default, and the choice outlives a reload of the plugin.
   - `Open` leaves out deferred and closed issues.
-  - `Closed` is ordered by `closed_at`, latest first; the other filters by priority, then by id.
-  - Each button carries the number of issues of its filter's last read, as `Ready 7`; a filter not read yet, or whose read failed, has no number.
-  - The row ends with `Refresh` (see Loading).
-- Atop the pane, above the filters, the issues in progress stay in view whatever the filter: a block headed `In progress`, read with `bd list --status in_progress` and kept in `beads-pane.working`.
-  - Its rows are list rows, sharing the list's column widths; the filters still list these issues too.
-  - An issue in the block opens its card under its block row, never a second time in the list.
-  - The block is left out while no issue is in progress.
-- Under the filters, on a line of its own, `Ask the agent to pick the next issue…` (hotkey `n`) drafts in the prompt box, as the card's `Ask the agent to take this issue…` does, the request to pick of the issues `bd ready` lists the one that fits best with the session's work, say which and why, then claim it and read it. The agent picks, since only it knows the session.
-- Rows
-  - Columns: status mark, priority, id, type, title. Each column has one width, and a wrapped title stays in its column.
-  - Status marks are bd's own; an open issue that `bd blocked` lists gets the blocked mark `●`.
-  - Marks take bd's colors, `#FFB454` (in progress), `#F07178` (blocked) and `#8090A0` (closed), with open plain; the deferred mark is ice blue `#39BAE6` instead of bd's gray, so it does not read as closed.
-  - Priorities take bd's colors: P0 `#F07178` in bold, P1 `#FF8F40`, P2 `#E6B450`, P3 and P4 plain.
-  - Types take `#D2A6FF` (epic), `#59C2FF` (feature), `#F26D78` (bug), `#95E6CB` (task) and `#A6ACB3` (any other).
-  - Closed issues are drawn dim.
-  - Pressing an id copies it, and a toast says whether the copy took.
-  - Pressing a title opens the issue's card under its row; pressing it again closes the card. One card is open at a time.
+  - Each button shows how many issues its filter holds, as `Ready 7`, once that filter has been read.
+  - A switch draws the filter's last read at once while it is read again.
+  - The row ends with `Refresh` (hotkey `u`).
+- `Ask the agent to pick the next issue…` (hotkey `n`), under the filters, drafts in the prompt box a request to pick of the ready issues the one that fits the session's work best, say which and why, then take it.
+- List
+  - Rows in columns: status mark, priority, id, type, title; a long title wraps within its column.
+  - `Closed` lists the latest closed first; the other filters go by priority, then by id.
+  - Status marks, priorities and types are colored after bd; an open issue blocked by another gets the blocked mark; closed issues are dim.
+  - Pressing an id copies it; pressing a title opens the issue's card under its row, and pressing it again closes it. One card is open at a time.
 - Card
-  - Read with one `bd show <id> --json --include-dependents --include-comments` each time it opens; the last read is kept in `beads-pane.cards` and drawn meanwhile, the open id in `beads-pane.expanded`.
-  - A facts line: status, owner (the `created_by` actor, as `bd show` prints it), assignee, labels, created and updated days, closing day and reason.
-  - Under the facts line of an issue that is not closed, a `Ask the agent to take this issue…` button (hotkey `s`) drafts a prompt in the prompt box through `$.prompt.fill`, for the person to edit and send: the id and title, and the request to claim the issue with `bd update <id> --claim` and read it with `bd show <id>`.
-  - An empty prompt box takes the draft whole; one holding text keeps it, with the draft after a blank line. A toast says whether the box took the draft.
-  - Markdown sections `Description`, `Design`, `Acceptance criteria` and `Notes`, each only when bd has text for it.
-  - Linked issues in the columns of a list row (status mark and priority, id, title), with one id width across the card, grouped as `Parent`, `Depends on`, `Blocks`, `Children` and `Related`; a group without issues is left out.
-  - `Children` carries the epic's progress as bd prints it, `3/10 complete (30%)`.
-  - The card has a `subtle` rounded border and, outside the terminal, a translucent gray background `#8080801A`.
+  - A facts line: status, owner, assignee, labels, created and updated days, closing day and reason.
+  - `Ask the agent to take this issue…` (hotkey `s`), on an issue that is not closed, drafts in the prompt box a request to claim the issue and read it.
+  - The sections `Description`, `Design`, `Acceptance criteria` and `Notes`, each only when it has text.
+  - Linked issues grouped as `Parent`, `Depends on`, `Blocks`, `Children` and `Related`; `Children` carries the epic's progress, as `3/10 complete (30%)`.
   - `Comments`, oldest first, each with its author and day.
-  - Control characters other than tab and newline are stripped from bd's text, so a pasted carriage return cannot leave the pane undrawn.
-  - A failed read draws `bd failed:` with bd's message inside the card.
+  - An issue in `In progress` opens its card there, never a second time in the list.
+- Drafts
+  - Both draft buttons leave the request in the prompt box for the person to edit and send; text already there is kept, with the draft after a blank line.
+  - A toast says whether the box took the draft.
+- Staying current
+  - While the pane is open, it reads bd again on `Refresh`, and after each agent turn or Bash command that runs `bd` when the beads database changed.
+- Besides the list, the pane draws: not loaded yet, loading, no beads database (with a `bd init` hint) and a bd error; a card that cannot be read says why.
