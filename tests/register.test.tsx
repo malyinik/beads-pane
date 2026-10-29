@@ -259,6 +259,7 @@ const COMMANDS = {
         "--status",
         "open,in_progress,blocked",
     ],
+    deferred: ["bd", "list", "--json", "--limit", "0", "--status", "deferred"],
     closed: ["bd", "list", "--json", "--limit", "0", "--status", "closed"],
     all: ["bd", "list", "--all", "--json", "--limit", "0"],
 };
@@ -435,6 +436,7 @@ test("the command reads the chosen filter first, then the issues in progress, th
         EPICS,
         COMMANDS.ready,
         COMMANDS.blocked,
+        COMMANDS.deferred,
         COMMANDS.closed,
         COMMANDS.all,
     ]);
@@ -504,7 +506,7 @@ test("a filter never read says it is loading while bd answers", async ($, on) =>
     await ui.unmount();
 });
 
-test("each filter runs its own bd command", async ($, on) => {
+test("each filter runs its own bd command and says when it lists nothing", async ($, on) => {
     const bd = engine(on, {
         list: ran(0, "[]"),
         ready: ran(0, "[]"),
@@ -516,24 +518,35 @@ test("each filter runs its own bd command", async ($, on) => {
         isInteractive: true,
     });
     const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+    const empties: (string | undefined)[] = [];
 
     for (const key of [
         "filter-ready",
         "filter-blocked",
         "filter-open",
+        "filter-deferred",
         "filter-closed",
         "filter-all",
     ]) {
         await ui.press({ key });
+        empties.push((await ui.find({ type: "Text" }))?.text);
     }
+    expect(empties).toEqual([
+        "No ready issues.",
+        "No blocked issues.",
+        "No open issues.",
+        "No deferred issues.",
+        "No closed issues.",
+        "No issues.",
+    ]);
     expect(bd.argvs).toEqual([
         COMMANDS.ready,
         COMMANDS.blocked,
         COMMANDS.open,
+        COMMANDS.deferred,
         COMMANDS.closed,
         COMMANDS.all,
     ]);
-    expect((await ui.find({ type: "Text" }))?.text).toBe("No issues.");
     await ui.unmount();
 });
 
@@ -1356,6 +1369,7 @@ test("a filter button counts the issues of the filter's last read, and has no nu
         "Ready",
         "Blocked",
         "Open",
+        "Deferred",
         "Closed",
         "All",
     ]);
@@ -1365,6 +1379,7 @@ test("a filter button counts the issues of the filter's last read, and has no nu
         "Ready 1",
         "Blocked",
         "Open 2",
+        "Deferred 2",
         "Closed 2",
         "All 2",
     ]);
@@ -1659,6 +1674,7 @@ const RELOAD = [
     EPICS,
     COMMANDS.ready,
     COMMANDS.blocked,
+    COMMANDS.deferred,
     COMMANDS.closed,
     COMMANDS.all,
 ];

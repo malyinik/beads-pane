@@ -73,6 +73,12 @@ const FILTERS: readonly {
     },
     { filter: "open", label: "Open", hotkey: "o", empty: "No open issues." },
     {
+        filter: "deferred",
+        label: "Deferred",
+        hotkey: "d",
+        empty: "No deferred issues.",
+    },
+    {
         filter: "closed",
         label: "Closed",
         hotkey: "c",

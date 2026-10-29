@@ -23,6 +23,7 @@ const COMMANDS: Record<Listing, readonly string[]> = {
         "--status",
         "open,in_progress,blocked",
     ],
+    deferred: ["bd", "list", "--json", "--limit", "0", "--status", "deferred"],
     closed: ["bd", "list", "--json", "--limit", "0", "--status", "closed"],
     all: ["bd", "list", "--all", "--json", "--limit", "0"],
     in_progress: [
@@ -422,6 +423,7 @@ const ORDERS: Record<Listing, (a: Issue, b: Issue) => number> = {
     ready: byPriority,
     blocked: byPriority,
     open: byPriority,
+    deferred: byPriority,
     closed: byClosing,
     all: byPriority,
     in_progress: byPriority,

@@ -18,9 +18,15 @@ export type Issue = {
 
 /**
  * Which issues the pane lists, each read by its own bd command.
- * `ready` has no open blockers, `blocked` waits on another issue, `open` is everything neither closed nor deferred, `closed` is what was closed, `all` includes everything.
+ * `ready` has no open blockers, `blocked` waits on another issue, `open` is everything neither closed nor deferred, `deferred` is what was put off, `closed` is what was closed, `all` includes everything.
  */
-export type Filter = "ready" | "blocked" | "open" | "closed" | "all";
+export type Filter =
+    | "ready"
+    | "blocked"
+    | "open"
+    | "deferred"
+    | "closed"
+    | "all";
 
 /** What one bd listing reads: a {@link Filter}'s issues, or `in_progress`, the issues in progress the pane keeps in view above every filter. */
 export type Listing = Filter | "in_progress";

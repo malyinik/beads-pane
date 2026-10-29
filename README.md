@@ -6,7 +6,7 @@ The main target is the Claude Code desktop app (`desktop` surface).
 The terminal (`terminal` surface) runs the same code.
 
 > **Status:** early development.
-> The `/beads-pane` command opens the pane and lists issues, filtered by `ready`, `blocked`, `open`, `closed` or `all`.
+> The `/beads-pane` command opens the pane and lists issues, filtered by `ready`, `blocked`, `open`, `deferred`, `closed` or `all`.
 > Each filter button counts its issues, and the issues in progress stay pinned atop the pane whatever the filter.
 > An open epic's row shows how many of its children are closed, as `(7/10)` before its title.
 > An epic ready to close, every child of it closed, is marked with a green `◉`.

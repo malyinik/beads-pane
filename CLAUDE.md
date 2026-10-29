@@ -61,8 +61,8 @@ Before reporting such a change as done, check the list against the code it touch
 - `/beads-pane` opens the pane; nothing opens it at session start.
 - `In progress`, atop the pane, keeps the issues in progress in view whatever the filter, and is left out while there are none.
 - Filters
-  - Buttons `Ready`, `Blocked`, `Open`, `Closed` and `All`, with the hotkeys `r`, `b`, `o`, `c` and `a`; `Open` is the default, and the choice outlives a reload of the plugin.
-  - `Open` leaves out deferred and closed issues.
+  - Buttons `Ready`, `Blocked`, `Open`, `Deferred`, `Closed` and `All`, with the hotkeys `r`, `b`, `o`, `d`, `c` and `a`; `Open` is the default, and the choice outlives a reload of the plugin.
+  - `Open` leaves out deferred and closed issues, and `Deferred` lists only the deferred ones.
   - Each button shows how many issues its filter holds, as `Ready 7`, once that filter has been read.
   - A switch draws the filter's last read at once while it is read again.
   - The row ends with `Refresh` (hotkey `u`).
