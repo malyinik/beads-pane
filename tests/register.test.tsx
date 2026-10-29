@@ -1378,7 +1378,7 @@ function epics(...counts: [id: string, closed: number, total: number][]) {
             epic: { id, title: id, status: "open", issue_type: "epic" },
             total_children: total,
             closed_children: closed,
-            eligible_for_close: false,
+            eligible_for_close: closed === total,
         })),
     );
 }
@@ -1597,6 +1597,46 @@ test("children whose epic is outside the filter stand under it drawn dim as cont
     await ui.press({ key: "refresh" });
     await bd.settle();
     expect(await rows(ui)).toEqual(["● P2bp-1.2bugThird"]);
+    await ui.unmount();
+});
+
+test("an open epic whose children are all closed is marked green as ready to close, unless it is blocked", async ($, on) => {
+    let blocked = ran(0, "[]");
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, "[]"),
+        get blocked() {
+            return blocked;
+        },
+        epic: ran(0, epics(["bp-1", 3, 3])),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    expect((await rows(ui))[0]).toBe("◉ P0bp-1epic(3/3) First");
+    expect((await exactText(ui, "◉"))?.props.color).toBe("#AAD94C");
+
+    blocked = ran(
+        0,
+        JSON.stringify([
+            {
+                id: "bp-1",
+                title: "First",
+                status: "open",
+                priority: 0,
+                issue_type: "epic",
+            },
+        ]),
+    );
+    await ui.press({ key: "refresh" });
+    await bd.settle();
+    expect((await rows(ui))[0]).toBe("● P0bp-1epic(3/3) First");
     await ui.unmount();
 });
 

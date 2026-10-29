@@ -127,6 +127,7 @@ export async function fetchProgress(
         progress[entry.epic.id] = {
             closed: entry.closed_children,
             total: entry.total_children,
+            isDone: entry.eligible_for_close === true,
         };
     }
 

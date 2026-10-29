@@ -43,6 +43,8 @@ export type Progress = {
     closed: number;
     /** All the children. */
     total: number;
+    /** Whether bd holds the epic ready to close, every child of it closed. */
+    isDone: boolean;
 };
 
 /** The {@link Progress} of each open epic that has children, by epic id. */

@@ -50,7 +50,7 @@ const working = atom({ plugin: "beads-pane", key: "working" } as const, null, {
 const progress = atom(
     { plugin: "beads-pane", key: "progress" } as const,
     {},
-    { shape: "progress-1" },
+    { shape: "progress-2" },
 );
 
 /** The filter switch above the list, in the order its buttons are drawn. */
@@ -108,6 +108,9 @@ const STATUS_COLORS: Readonly<Record<string, string>> = {
     deferred: "#39BAE6",
     closed: "#8090A0",
 };
+
+/** The mark of an open epic whose children are all closed, so it is ready to close, and its green. */
+const DONE_MARK = { mark: "◉", color: "#AAD94C" };
 
 /** The colors bd itself draws priorities in; P3 and P4 are drawn as plain text. */
 const PRIORITY_COLORS: Readonly<Record<number, string>> = {
@@ -609,15 +612,25 @@ export const register: Register = (on) => {
         const empty =
             FILTERS.find((one) => one.filter === chosen)?.empty ?? "No issues.";
 
-        /** The status mark and priority of `issue`, in bd's colors, both dim when it is closed or `isClosed` says so. */
+        /** The status mark and priority of `issue`, in bd's colors, both dim when it is closed or `isClosed` says so; an open epic ready to close takes {@link DONE_MARK}. */
         const drawMark = (
             issue: Issue,
             isClosed = issue.status === "closed",
         ) => {
+            const isDone =
+                counts[issue.id]?.isDone === true &&
+                statusOf(issue, blocked) === "open";
+
             return (
                 <Text mono dimColor={isClosed}>
-                    <Text color={STATUS_COLORS[statusOf(issue, blocked)]}>
-                        {markOf(issue, blocked)}
+                    <Text
+                        color={
+                            isDone
+                                ? DONE_MARK.color
+                                : STATUS_COLORS[statusOf(issue, blocked)]
+                        }
+                    >
+                        {isDone ? DONE_MARK.mark : markOf(issue, blocked)}
                     </Text>{" "}
                     <Text
                         color={
