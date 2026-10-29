@@ -70,6 +70,8 @@ Before reporting such a change as done, check the list against the code it touch
   - The choice is kept in `beads-pane.filter`; `Open` is the default.
   - `Open` leaves out deferred and closed issues.
   - `Closed` is ordered by `closed_at`, latest first; the other filters by priority, then by id.
+  - The row ends with `Refresh` (see Loading).
+- Under the filters, on a line of its own, `Ask the agent to pick the next issue…` (hotkey `n`) drafts in the prompt box, as the card's `Ask the agent to take this issue…` does, the request to pick of the issues `bd ready` lists the one that fits best with the session's work, say which and why, then claim it and read it. The agent picks, since only it knows the session.
 - Rows
   - Columns: status mark, priority, id, type, title. Each column has one width, and a wrapped title stays in its column.
   - Status marks are bd's own; an open issue that `bd blocked` lists gets the blocked mark `●`.

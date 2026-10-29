@@ -373,11 +373,21 @@ function startPrompt(issue: Issue): string {
 }
 
 /**
- * Drafts {@link startPrompt} for `issue` in the prompt box, for the person to edit and send, and says how that went in a toast.
+ * The prompt the button that asks for the next issue drafts: the request to pick, of the issues `bd ready` lists, the one that fits best with the session's work, say which and why, then claim and read it.
+ * The agent picks, since only it knows what the session has been doing.
+ */
+const NEXT_PROMPT =
+    "Take the next beads issue into work: of the issues `bd ready` lists, pick the one that fits best with what this session has been doing, and tell me which and why.\nClaim it with `bd update <id> --claim` and read it with `bd show <id>`.";
+
+/**
+ * Drafts `text` in the prompt box, for the person to edit and send, and says in a toast whether the box took the request to `what`.
  * An empty box takes the draft whole, and a box holding text keeps it, with the draft after a blank line.
  */
-async function start($: EngineInterface, issue: Issue): Promise<void> {
-    const text = startPrompt(issue);
+async function draft(
+    $: EngineInterface,
+    text: string,
+    what: string,
+): Promise<void> {
     const box = await $.prompt.read();
     const filled = await $.prompt
         .fill(
@@ -388,8 +398,8 @@ async function start($: EngineInterface, issue: Issue): Promise<void> {
         .catch(() => ({ isFilled: false, refusal: undefined }));
     $.ui.toast(
         filled.isFilled
-            ? `Drafted the request to start ${issue.id} in the prompt box`
-            : `Could not draft the request to start ${issue.id}: ${FILL_FAILURES[filled.refusal ?? "refused"]}`,
+            ? `Drafted the request to ${what} in the prompt box`
+            : `Could not draft the request to ${what}: ${FILL_FAILURES[filled.refusal ?? "refused"]}`,
     );
 }
 
@@ -568,7 +578,11 @@ export const register: Register = (on) => {
                                           hotkey="s"
                                           variant="secondary"
                                           onPress={() => {
-                                              void start($, issue);
+                                              void draft(
+                                                  $,
+                                                  startPrompt(issue),
+                                                  `start ${issue.id}`,
+                                              );
                                           }}
                                       />
                                   </Box>,
@@ -657,6 +671,17 @@ export const register: Register = (on) => {
                         dimColor
                         onPress={() => {
                             void reload($);
+                        }}
+                    />
+                </Box>
+                <Box flexDirection="row">
+                    <Button
+                        key="next"
+                        label="Ask the agent to pick the next issue…"
+                        hotkey="n"
+                        plain
+                        onPress={() => {
+                            void draft($, NEXT_PROMPT, "take the next issue");
                         }}
                     />
                 </Box>

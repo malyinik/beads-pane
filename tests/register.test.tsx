@@ -1133,6 +1133,21 @@ test("a draft the prompt box refuses says so", async ($, on) => {
     await ui.unmount();
 });
 
+test("the next issue button drafts the request to pick the ready issue that fits the session and take it", async ($, on) => {
+    const shown = toasts(on);
+    const { bd, ui } = await opened($, on, ran(0, SHOWN));
+    bd.box = "my own words";
+
+    await ui.press({ key: "next" });
+    expect(bd.box).toBe(
+        "my own words\n\nTake the next beads issue into work: of the issues `bd ready` lists, pick the one that fits best with what this session has been doing, and tell me which and why.\nClaim it with `bd update <id> --claim` and read it with `bd show <id>`.",
+    );
+    expect(shown).toEqual([
+        "Drafted the request to take the next issue in the prompt box",
+    ]);
+    await ui.unmount();
+});
+
 test("a closed issue's card has no take button", async ($, on) => {
     const bd = engine(on, {
         list: ran(
