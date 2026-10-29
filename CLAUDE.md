@@ -59,18 +59,23 @@ Before reporting such a change as done, check the list against the code it touch
 
 - `/beads-pane` opens the pane; nothing opens it at session start.
 - Loading
-  - Each run of the command reads the chosen filter, then the other filters one by one in the background.
+  - Each run of the command reads the chosen filter, then the issues in progress and the other filters one by one in the background.
   - Every filter keeps its last read in `beads-pane.lists`, so a switch draws at once while bd reads that filter again.
   - While the pane is open, everything it draws is read again on the `Refresh` button (hotkey `u`), and at the end of each main-loop turn and after each Bash command that runs `bd` anywhere in it (`cd repo && bd close x` too) when the database version changed.
   - The database version is the text of the embedded database's `manifest`, found through `bd where` and `metadata.json` once per working directory; when it cannot be read, as with a Dolt server, those triggers always read.
-  - Such a reload reads the chosen filter, then the others, then the open card; one asked for while another runs makes that one read once more instead of starting a second.
+  - Such a reload reads the chosen filter, then the issues in progress, then the other filters, then the open card; one asked for while another runs makes that one read once more instead of starting a second.
   - The pane draws four states besides the list: not loaded yet, loading, no beads database (with a `bd init` hint) and a bd error.
 - Filters
   - Buttons `Ready`, `Blocked`, `Open`, `Closed` and `All`, with the hotkeys `r`, `b`, `o`, `c` and `a`.
   - The choice is kept in `beads-pane.filter`; `Open` is the default.
   - `Open` leaves out deferred and closed issues.
   - `Closed` is ordered by `closed_at`, latest first; the other filters by priority, then by id.
+  - Each button carries the number of issues of its filter's last read, as `Ready 7`; a filter not read yet, or whose read failed, has no number.
   - The row ends with `Refresh` (see Loading).
+- Atop the pane, above the filters, the issues in progress stay in view whatever the filter: a block headed `In progress`, read with `bd list --status in_progress` and kept in `beads-pane.working`.
+  - Its rows are list rows, sharing the list's column widths; the filters still list these issues too.
+  - An issue in the block opens its card under its block row, never a second time in the list.
+  - The block is left out while no issue is in progress.
 - Under the filters, on a line of its own, `Ask the agent to pick the next issue…` (hotkey `n`) drafts in the prompt box, as the card's `Ask the agent to take this issue…` does, the request to pick of the issues `bd ready` lists the one that fits best with the session's work, say which and why, then claim it and read it. The agent picks, since only it knows the session.
 - Rows
   - Columns: status mark, priority, id, type, title. Each column has one width, and a wrapped title stays in its column.

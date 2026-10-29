@@ -20,6 +20,9 @@ export type Issue = {
  */
 export type Filter = "ready" | "blocked" | "open" | "closed" | "all";
 
+/** What one bd listing reads: a {@link Filter}'s issues, or `in_progress`, the issues in progress the pane keeps in view above every filter. */
+export type Listing = Filter | "in_progress";
+
 /**
  * What one read of the session's beads database came to.
  * `missing` means bd found no database for the session's working directory.
@@ -99,6 +102,7 @@ declare module "claude-code" {
             filter: Shaped<Filter>;
             expanded: Shaped<string | null>;
             cards: Shaped<Cards>;
+            working: Shaped<Load | null>;
         };
     }
 }

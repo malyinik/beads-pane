@@ -1,9 +1,9 @@
 import type { EngineInterface, ProcessRunResult } from "claude-code";
 
-import type { Card, CardLoad, Comment, Filter, Issue, Load } from "../types";
+import type { Card, CardLoad, Comment, Issue, Listing, Load } from "../types";
 
-/** The bd command that lists each {@link Filter}'s issues, with no limit on their number. */
-const COMMANDS: Record<Filter, readonly string[]> = {
+/** The bd command that reads each {@link Listing}, with no limit on the number of issues. */
+const COMMANDS: Record<Listing, readonly string[]> = {
     ready: ["bd", "ready", "--json", "--limit", "0"],
     blocked: ["bd", "blocked", "--json"],
     open: [
@@ -17,6 +17,15 @@ const COMMANDS: Record<Filter, readonly string[]> = {
     ],
     closed: ["bd", "list", "--json", "--limit", "0", "--status", "closed"],
     all: ["bd", "list", "--all", "--json", "--limit", "0"],
+    in_progress: [
+        "bd",
+        "list",
+        "--json",
+        "--limit",
+        "0",
+        "--status",
+        "in_progress",
+    ],
 };
 
 /** `bd where`, which names the workspace bd resolves for the working directory. */
@@ -26,15 +35,15 @@ const WHERE = ["bd", "where", "--json"] as const;
 const NO_DATABASE = "no_beads_directory";
 
 /**
- * Runs the bd command of `filter` in the session's working directory and turns its outcome into a {@link Load}.
- * The issues come in the filter's order from {@link ORDERS}.
+ * Runs the bd command of `listing` in the session's working directory and turns its outcome into a {@link Load}.
+ * The issues come in the listing's order from {@link ORDERS}.
  * Never rejects: a bd that fails or cannot start comes back as an `error` load.
  */
 export async function fetchLoad(
     $: EngineInterface,
-    filter: Filter,
+    listing: Listing,
 ): Promise<Load> {
-    const run = await runBd($, COMMANDS[filter]);
+    const run = await runBd($, COMMANDS[listing]);
     if (run.kind !== "ran") {
         return run;
     }
@@ -45,7 +54,7 @@ export async function fetchLoad(
               kind: "error",
               message: "bd printed something other than a JSON list of issues.",
           }
-        : { kind: "ready", issues: issues.sort(ORDERS[filter]) };
+        : { kind: "ready", issues: issues.sort(ORDERS[listing]) };
 }
 
 /**
@@ -362,13 +371,14 @@ function byPriority(a: Issue, b: Issue): number {
     );
 }
 
-/** How each {@link Filter} orders its issues: closed ones by closing, the rest by priority. */
-const ORDERS: Record<Filter, (a: Issue, b: Issue) => number> = {
+/** How each {@link Listing} orders its issues: closed ones by closing, the rest by priority. */
+const ORDERS: Record<Listing, (a: Issue, b: Issue) => number> = {
     ready: byPriority,
     blocked: byPriority,
     open: byPriority,
     closed: byClosing,
     all: byPriority,
+    in_progress: byPriority,
 };
 
 /** `JSON.parse` that returns `undefined` instead of throwing. */

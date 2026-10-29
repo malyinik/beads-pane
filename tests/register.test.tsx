@@ -99,7 +99,7 @@ type Engine = {
 };
 
 /**
- * Answers the engine calls `/beads-pane` makes, with `bd` answered by subcommand from `runs`.
+ * Answers the engine calls `/beads-pane` makes, with `bd` answered by subcommand from `runs`, but for the listing of the issues in progress, answered from `runs.in_progress` or else with no issues.
  * A `{ deny }` answer makes that run reject, as when bd cannot start, and a function answers when its promise settles.
  * Answers `ui.panes` with the panes `ui.open` was asked for, the end of a turn with its answer, the working directory with `/repo`, `fs.read` from `files`, a path missing there being refused, and the prompt box from `box`, which a draft replaces or extends.
  * Returns the argument vectors bd was run with, the prompt box and its drafts, `settle`, which waits out the reads the command left running, and the mocked clock.
@@ -159,7 +159,9 @@ function engine(
     });
     on("process.run", async (_, e) => {
         argvs.push([...e.argv]);
-        const answer = runs[e.argv[1] ?? ""];
+        const answer = e.argv.includes("in_progress")
+            ? (runs.in_progress ?? ran(0, "[]"))
+            : runs[e.argv[1] ?? ""];
         if (typeof answer === "function") {
             return await answer();
         }
@@ -254,6 +256,17 @@ const COMMANDS = {
     closed: ["bd", "list", "--json", "--limit", "0", "--status", "closed"],
     all: ["bd", "list", "--all", "--json", "--limit", "0"],
 };
+
+/** The bd command that reads the issues in progress pinned atop the pane. */
+const IN_PROGRESS = [
+    "bd",
+    "list",
+    "--json",
+    "--limit",
+    "0",
+    "--status",
+    "in_progress",
+];
 
 test("the pane lists open issues by priority, with status, priority, id, type and title", async ($, on) => {
     const bd = engine(on, {
@@ -393,7 +406,7 @@ test("status marks take bd's colors but an ice blue for deferred", async ($, on)
     await ui.unmount();
 });
 
-test("the command reads the chosen filter first, then the others in the background", async ($, on) => {
+test("the command reads the chosen filter first, then the issues in progress and the others in the background", async ($, on) => {
     const bd = engine(on, {
         list: ran(0, LISTED),
         ready: ran(0, READY),
@@ -409,6 +422,7 @@ test("the command reads the chosen filter first, then the others in the backgrou
 
     expect(bd.argvs).toEqual([
         COMMANDS.open,
+        IN_PROGRESS,
         COMMANDS.ready,
         COMMANDS.blocked,
         COMMANDS.closed,
@@ -1229,6 +1243,104 @@ test("an epic's card counts its closed children, and linked issues share one id 
     await ui.unmount();
 });
 
+test("the issues in progress are pinned atop the pane, where their card opens, and the block goes once none is left", async ($, on) => {
+    let inProgress = ran(
+        0,
+        JSON.stringify([
+            {
+                id: "bp-1.10",
+                title: "Second",
+                status: "in_progress",
+                priority: 1,
+                issue_type: "task",
+            },
+        ]),
+    );
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+        show: ran(0, SHOWN),
+        get in_progress() {
+            return inProgress;
+        },
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+    const keys = async () =>
+        (await ui.findAll({ type: "Box" }))
+            .map((box) => box.key ?? "")
+            .filter((key) => /^(pinned-issue|issue|details)-/.test(key));
+
+    expect(await exactText(ui, "In progress")).toBeDefined();
+    expect(await keys()).toEqual([
+        "pinned-issue-bp-1.10",
+        "issue-bp-1",
+        "issue-bp-1.10",
+    ]);
+    expect((await ui.find({ key: "pinned-issue-bp-1.10" }))?.text).toBe(
+        "◐ P1bp-1.10taskSecond",
+    );
+
+    await ui.press({ key: "card-bp-1.10" });
+    expect(await keys()).toEqual([
+        "pinned-issue-bp-1.10",
+        "details-bp-1.10",
+        "issue-bp-1",
+        "issue-bp-1.10",
+    ]);
+    await ui.press({ key: "pinned-card-bp-1.10" });
+    expect(await ui.find({ key: "details-bp-1.10" })).toBeUndefined();
+
+    inProgress = ran(0, "[]");
+    await ui.press({ key: "refresh" });
+    expect(await ui.find({ key: "pinned" })).toBeUndefined();
+    expect(await exactText(ui, "In progress")).toBeUndefined();
+    await ui.unmount();
+});
+
+test("a filter button counts the issues of the filter's last read, and has no number before it", async ($, on) => {
+    const bd = engine(on, {
+        list: ran(0, LISTED),
+        ready: ran(0, READY),
+        blocked: ran(1, "", "Error: database is locked"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+    const labels = async () =>
+        (await ui.findAll({ type: "Button" }))
+            .filter((button) => button.key?.startsWith("filter-"))
+            .map((button) => button.props.label);
+
+    expect(await labels()).toEqual([
+        "Ready",
+        "Blocked",
+        "Open",
+        "Closed",
+        "All",
+    ]);
+    await $.command.run(TYPED);
+    await bd.settle();
+    expect(await labels()).toEqual([
+        "Ready 1",
+        "Blocked",
+        "Open 2",
+        "Closed 2",
+        "All 2",
+    ]);
+    await ui.unmount();
+});
+
 /** The end of a turn of the main loop, as the engine raises it. */
 const TURN_END = {
     answer: "",
@@ -1241,9 +1353,10 @@ const TURN_END = {
 /** `bd where`, which a reload check runs while it does not know where the database is. */
 const WHERE = ["bd", "where", "--json"];
 
-/** Every filter read again after the pane's chosen `open`, as one reload runs them. */
+/** Every filter read again, the pane's chosen `open` first and the issues in progress next, as one reload runs them. */
 const RELOAD = [
     COMMANDS.open,
+    IN_PROGRESS,
     COMMANDS.ready,
     COMMANDS.blocked,
     COMMANDS.closed,

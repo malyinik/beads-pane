@@ -41,6 +41,11 @@ const cards = atom(
     },
 );
 
+/** The last read of the issues in progress, drawn atop the pane whatever the filter; `null` before the first read. */
+const working = atom({ plugin: "beads-pane", key: "working" } as const, null, {
+    shape: "working-1",
+});
+
 /** The filter switch above the list, in the order its buttons are drawn. */
 const FILTERS: readonly {
     /** The filter the button picks. */
@@ -68,6 +73,11 @@ const FILTERS: readonly {
     },
     { filter: "all", label: "All", hotkey: "a", empty: "No issues." },
 ];
+
+/** A filter button's label, followed by the number of issues of the filter's last read when that read succeeded, as `Ready 7`. */
+function labelOf(label: string, load: Load | undefined): string {
+    return load?.kind === "ready" ? `${label} ${load.issues.length}` : label;
+}
 
 /** The mark bd draws for a blocked issue. */
 const BLOCKED_MARK = "●";
@@ -120,13 +130,15 @@ async function choose($: EngineInterface, chosen: Filter): Promise<void> {
 }
 
 /**
- * Reads the issues of every filter but `chosen`, one after another, so a later switch draws at once.
+ * Reads the issues in progress, then the issues of every filter but `chosen`, one after another, so a later switch draws at once.
  * bd runs are not started together because concurrent reads of its embedded database are slower than serial ones.
  */
 async function refreshOthers(
     $: EngineInterface,
     chosen: Filter,
 ): Promise<void> {
+    const loaded = await fetchLoad($, "in_progress");
+    await update($, working, () => loaded);
     for (const one of FILTERS) {
         if (one.filter !== chosen) {
             await refresh($, one.filter);
@@ -154,7 +166,7 @@ async function toggle($: EngineInterface, id: string): Promise<void> {
 }
 
 /**
- * Reads again everything the pane draws: the chosen filter, then the other filters one by one, then the open card.
+ * Reads again everything the pane draws: the chosen filter, then the issues in progress and the other filters one by one, then the open card.
  * The others and the card are left alone when the chosen filter's read fails.
  */
 async function refreshAll($: EngineInterface): Promise<void> {
@@ -415,7 +427,7 @@ const FILL_FAILURES: Readonly<
 /**
  * Registers the `/beads-pane` command and draws the beads pane.
  * The pane opens only on the command, never unasked at session start.
- * Each run of the command reads the chosen filter from bd again, then the other filters in the background.
+ * Each run of the command reads the chosen filter from bd again, then the issues in progress and the other filters in the background.
  * While the pane is open, it is read again on its `Refresh` button, and at the end of each turn of the main loop and after each Bash command that runs bd when bd's database changed.
  */
 export const register: Register = (on) => {
@@ -484,14 +496,23 @@ export const register: Register = (on) => {
             );
         }
 
+        const inProgress = await read($, working);
+        const pinned = inProgress?.kind === "ready" ? inProgress.issues : [];
+        const isPinned = new Set(pinned.map((issue) => issue.id));
         const issues = state?.kind === "ready" ? state.issues : [];
         const blocked = new Set(
             all.blocked?.kind === "ready"
                 ? all.blocked.issues.map((issue) => issue.id)
                 : [],
         );
-        const idWidth = columnWidth(issues, (issue) => issue.id);
-        const typeWidth = columnWidth(issues, (issue) => issue.issue_type);
+        const idWidth = columnWidth(
+            [...pinned, ...issues],
+            (issue) => issue.id,
+        );
+        const typeWidth = columnWidth(
+            [...pinned, ...issues],
+            (issue) => issue.issue_type,
+        );
         const empty =
             FILTERS.find((one) => one.filter === chosen)?.empty ?? "No issues.";
 
@@ -647,13 +668,87 @@ export const register: Register = (on) => {
             </Box>
         );
 
+        /**
+         * The row of `issue` in the columns of the list: mark and priority, id, type, title.
+         * Under it comes its card while it is the open one and `hasCard` is set, so an issue pinned atop the pane draws its card there alone.
+         * `prefix` keeps the keys of the pinned rows apart from the list's own.
+         */
+        const drawRow = (issue: Issue, prefix: string, hasCard: boolean) => {
+            const isClosed = issue.status === "closed";
+
+            return [
+                <Box
+                    key={`${prefix}issue-${issue.id}`}
+                    flexDirection="row"
+                    alignItems="flex-start"
+                >
+                    <Box width={MARK_WIDTH} flexShrink={0}>
+                        {drawMark(issue)}
+                    </Box>
+                    <Box width={idWidth} flexShrink={0}>
+                        <Button
+                            key={`${prefix}copy-${issue.id}`}
+                            plain
+                            dimColor
+                            onPress={(press) => {
+                                void copyId($, issue.id, press.surface);
+                            }}
+                        >
+                            <Text mono>{issue.id}</Text>
+                        </Button>
+                    </Box>
+                    <Box width={typeWidth} flexShrink={0}>
+                        <Text
+                            mono
+                            dimColor={isClosed}
+                            color={
+                                isClosed
+                                    ? undefined
+                                    : (TYPE_COLORS[issue.issue_type] ??
+                                      TYPE_COLOR)
+                            }
+                        >
+                            {issue.issue_type}
+                        </Text>
+                    </Box>
+                    <Box flexShrink={1}>
+                        <Button
+                            key={`${prefix}card-${issue.id}`}
+                            plain
+                            onPress={() => {
+                                void toggle($, issue.id);
+                            }}
+                        >
+                            <Text dimColor={isClosed}>{issue.title}</Text>
+                        </Button>
+                    </Box>
+                </Box>,
+                ...(hasCard && opened === issue.id
+                    ? [drawCard(issue, card)]
+                    : []),
+            ];
+        };
+
         return (
             <Box flexDirection="column" gap={1}>
+                {pinned.length > 0 ? (
+                    <Box
+                        key="pinned"
+                        flexDirection="column"
+                        rowGap="xs"
+                        marginBottom={1}
+                    >
+                        <Text weight="bold">In progress</Text>
+                        {pinned.flatMap((issue) =>
+                            drawRow(issue, "pinned-", true),
+                        )}
+                    </Box>
+                ) : null}
                 <Box flexDirection="row" flexWrap="wrap" gap={1}>
                     {FILTERS.map((one) => (
                         <Button
                             key={`filter-${one.filter}`}
-                            label={one.label}
+                            label={labelOf(one.label, all[one.filter])}
                             hotkey={one.hotkey}
                             variant={
                                 one.filter === chosen ? "primary" : "secondary"
@@ -697,68 +792,9 @@ export const register: Register = (on) => {
                     <Text dimColor>{empty}</Text>
                 ) : (
                     <Box flexDirection="column" rowGap="xs">
-                        {state.issues.flatMap((issue) => {
-                            const isClosed = issue.status === "closed";
-
-                            return [
-                                <Box
-                                    key={`issue-${issue.id}`}
-                                    flexDirection="row"
-                                    alignItems="flex-start"
-                                >
-                                    <Box width={MARK_WIDTH} flexShrink={0}>
-                                        {drawMark(issue)}
-                                    </Box>
-                                    <Box width={idWidth} flexShrink={0}>
-                                        <Button
-                                            key={`copy-${issue.id}`}
-                                            plain
-                                            dimColor
-                                            onPress={(press) => {
-                                                void copyId(
-                                                    $,
-                                                    issue.id,
-                                                    press.surface,
-                                                );
-                                            }}
-                                        >
-                                            <Text mono>{issue.id}</Text>
-                                        </Button>
-                                    </Box>
-                                    <Box width={typeWidth} flexShrink={0}>
-                                        <Text
-                                            mono
-                                            dimColor={isClosed}
-                                            color={
-                                                isClosed
-                                                    ? undefined
-                                                    : (TYPE_COLORS[
-                                                          issue.issue_type
-                                                      ] ?? TYPE_COLOR)
-                                            }
-                                        >
-                                            {issue.issue_type}
-                                        </Text>
-                                    </Box>
-                                    <Box flexShrink={1}>
-                                        <Button
-                                            key={`card-${issue.id}`}
-                                            plain
-                                            onPress={() => {
-                                                void toggle($, issue.id);
-                                            }}
-                                        >
-                                            <Text dimColor={isClosed}>
-                                                {issue.title}
-                                            </Text>
-                                        </Button>
-                                    </Box>
-                                </Box>,
-                                ...(opened === issue.id
-                                    ? [drawCard(issue, card)]
-                                    : []),
-                            ];
-                        })}
+                        {state.issues.flatMap((issue) =>
+                            drawRow(issue, "", !isPinned.has(issue.id)),
+                        )}
                     </Box>
                 )}
             </Box>
