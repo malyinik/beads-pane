@@ -9,6 +9,7 @@ The terminal (`terminal` surface) runs the same code.
 > The `/beads-pane` command opens the pane and lists issues, filtered by `ready`, `blocked`, `open`, `closed` or `all`.
 > Each filter button counts its issues, and the issues in progress stay pinned atop the pane whatever the filter.
 > An open epic's row shows how many of its children are closed, as `(7/10)` before its title.
+> The issues of an epic stand under it in the list, tied to it by tree lines.
 > Pressing an issue's title opens its card: description, notes, linked issues and comments.
 > The card's `Ask the agent to take this issue…` button drafts a request to the agent, in the prompt box, to claim the issue and read it.
 > Its `Ask the agent to close this issue…` button drafts a request to check that the issue's work is done and close it.

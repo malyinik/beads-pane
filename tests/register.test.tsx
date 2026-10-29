@@ -1432,6 +1432,174 @@ test("an epic's title is led by its closed children of all in the list and atop 
     await ui.unmount();
 });
 
+/** An epic with two children, listed apart by priority, and an issue of no epic between them, as bd prints them. */
+const NESTED = JSON.stringify([
+    {
+        id: "bp-1.10",
+        title: "Second",
+        status: "in_progress",
+        priority: 1,
+        issue_type: "task",
+        parent: "bp-1",
+    },
+    {
+        id: "bp-3",
+        title: "Loose",
+        status: "open",
+        priority: 0,
+        issue_type: "bug",
+    },
+    {
+        id: "bp-1",
+        title: "First",
+        status: "open",
+        priority: 0,
+        issue_type: "epic",
+    },
+    {
+        id: "bp-1.2",
+        title: "Third",
+        status: "open",
+        priority: 2,
+        issue_type: "task",
+        parent: "bp-1",
+    },
+]);
+
+test("the children of an epic stand under it one step right and tied to it by tree lines, in the filter's order, and an issue of no epic keeps its place", async ($, on) => {
+    const bd = engine(on, {
+        list: ran(0, NESTED),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    expect(await rows(ui)).toEqual([
+        "○ P0bp-1epicFirst",
+        "├ ◐ P1bp-1.10taskSecond",
+        "└ ○ P2bp-1.2taskThird",
+        "○ P0bp-3bugLoose",
+    ]);
+    expect((await exactText(ui, "├ "))?.props.dimColor).toBe(true);
+
+    await ui.press({ key: "card-bp-1.2" });
+    expect((await ui.find({ key: "details-bp-1.2" }))?.props.marginLeft).toBe(
+        "○ P0 ".length + 2,
+    );
+    await ui.unmount();
+});
+
+test("an epic within an epic carries the tree line of its own epic past its children", async ($, on) => {
+    const issue = (
+        id: string,
+        type: string,
+        title: string,
+        parent?: string,
+    ) => ({
+        id,
+        title,
+        status: "open",
+        priority: parent === undefined ? 0 : 1,
+        issue_type: type,
+        parent,
+    });
+    const bd = engine(on, {
+        list: ran(
+            0,
+            JSON.stringify([
+                issue("bp-1.2", "task", "Side", "bp-1"),
+                issue("bp-1.1.1", "task", "Deep", "bp-1.1"),
+                issue("bp-1.1", "epic", "Middle", "bp-1"),
+                issue("bp-1", "epic", "Top"),
+            ]),
+        ),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    expect(await rows(ui)).toEqual([
+        "○ P0bp-1epicTop",
+        "├ ○ P1bp-1.1epicMiddle",
+        "│ └ ○ P1bp-1.1.1taskDeep",
+        "└ ○ P1bp-1.2taskSide",
+    ]);
+    await ui.unmount();
+});
+
+test("children whose epic is outside the filter stand under it drawn dim as context, found from the other filters when bd blocked leaves the epic out, and with their epic unknown they stand alone", async ($, on) => {
+    let list = ran(0, NESTED);
+    const bd = engine(on, {
+        get list() {
+            return list;
+        },
+        ready: ran(0, "[]"),
+        blocked: ran(
+            0,
+            JSON.stringify([
+                {
+                    id: "bp-1.2",
+                    title: "Third",
+                    status: "open",
+                    priority: 2,
+                    issue_type: "bug",
+                    parent: null,
+                },
+            ]),
+        ),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    await ui.press({ key: "filter-blocked" });
+    expect(await rows(ui)).toEqual([
+        "○ P0bp-1epicFirst",
+        "└ ● P2bp-1.2bugThird",
+    ]);
+    expect((await exactText(ui, "First"))?.props.dimColor).toBe(true);
+    expect((await exactText(ui, "Third"))?.props.dimColor).toBe(false);
+    expect(
+        new Set(
+            (await ui.findAll({ type: "Box" }))
+                .filter((box) => box.props.flexShrink === 0)
+                .map((box) => box.props.width),
+        ),
+    ).toEqual(
+        new Set([
+            "└ ".length,
+            "○ P0 ".length,
+            "bp-1.2 ".length,
+            "epic ".length,
+        ]),
+    );
+
+    list = ran(0, "[]");
+    await ui.press({ key: "refresh" });
+    await bd.settle();
+    expect(await rows(ui)).toEqual(["● P2bp-1.2bugThird"]);
+    await ui.unmount();
+});
+
 /** The end of a turn of the main loop, as the engine raises it. */
 const TURN_END = {
     answer: "",

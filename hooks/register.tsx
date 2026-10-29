@@ -17,7 +17,7 @@ const COMMAND = "beads-pane";
 const lists = atom(
     { plugin: "beads-pane", key: "lists" } as const,
     {},
-    { shape: "lists-2" },
+    { shape: "lists-3" },
 );
 
 /** The {@link Filter} chosen in the pane, `open` until the person picks another. */
@@ -37,13 +37,13 @@ const cards = atom(
     { plugin: "beads-pane", key: "cards" } as const,
     {},
     {
-        shape: "cards-1",
+        shape: "cards-2",
     },
 );
 
 /** The last read of the issues in progress, drawn atop the pane whatever the filter; `null` before the first read. */
 const working = atom({ plugin: "beads-pane", key: "working" } as const, null, {
-    shape: "working-1",
+    shape: "working-2",
 });
 
 /** The progress of each open epic as last read, drawn before the epic's title; a failed read leaves the last one. */
@@ -272,6 +272,78 @@ function statusOf(issue: Issue, blocked: ReadonlySet<string>): string {
     return blocked.has(issue.id) && issue.status === "open"
         ? "blocked"
         : issue.status;
+}
+
+/**
+ * The guides drawn before a row under an epic, two cells for each epic above it, as in bd's own trees.
+ * `branch` leads an issue with more of its epic's issues after it and `last` the final one, while `through` and `past` stand for each epic further up, with more of its issues to come or none.
+ */
+const GUIDES = { branch: "├ ", last: "└ ", through: "│ ", past: "  " };
+
+/** One row of the list: an issue, the {@link GUIDES} drawn before it, and whether it is an epic outside the filter drawn only as context for its children. */
+type Placed = { issue: Issue; guide: string; isContext: boolean };
+
+/**
+ * Lays `issues` out under their epics, keeping their order within each level.
+ * An issue whose epic is among `issues` follows it one step deeper, led by {@link GUIDES}.
+ * An issue's epic is its own `parent`, else the `parent` of its copy in `known`, since `bd blocked` leaves `parent` out.
+ * An epic outside `issues` that `known` holds is drawn as context where its first child would stand, with its children under it.
+ * A child whose epic is not known at all stays at the top level.
+ */
+function layOut(
+    issues: readonly Issue[],
+    known: ReadonlyMap<string, Issue>,
+): Placed[] {
+    const listed = new Set(issues.map((issue) => issue.id));
+    const children = new Map<string, Issue[]>();
+    const top: { issue: Issue; isContext: boolean }[] = [];
+    for (const issue of issues) {
+        const parent = issue.parent ?? known.get(issue.id)?.parent;
+        const epic =
+            parent === undefined
+                ? undefined
+                : listed.has(parent)
+                  ? parent
+                  : known.get(parent)?.id;
+        if (epic === undefined) {
+            top.push({ issue, isContext: false });
+            continue;
+        }
+        const siblings = children.get(epic);
+        if (siblings !== undefined) {
+            siblings.push(issue);
+            continue;
+        }
+        children.set(epic, [issue]);
+        const context = listed.has(epic) ? undefined : known.get(epic);
+        if (context !== undefined) {
+            top.push({ issue: context, isContext: true });
+        }
+    }
+    const placed: Placed[] = [];
+    const place = (
+        issue: Issue,
+        guide: string,
+        above: string,
+        isContext: boolean,
+    ) => {
+        placed.push({ issue, guide, isContext });
+        const under = children.get(issue.id) ?? [];
+        under.forEach((child, index) => {
+            const isLast = index === under.length - 1;
+            place(
+                child,
+                above + (isLast ? GUIDES.last : GUIDES.branch),
+                above + (isLast ? GUIDES.past : GUIDES.through),
+                false,
+            );
+        });
+    };
+    for (const { issue, isContext } of top) {
+        place(issue, "", "", isContext);
+    }
+
+    return placed;
 }
 
 /** Width of the status and priority column, `○ P0` and a space. */
@@ -519,27 +591,29 @@ export const register: Register = (on) => {
         const inProgress = await read($, working);
         const pinned = inProgress?.kind === "ready" ? inProgress.issues : [];
         const isPinned = new Set(pinned.map((issue) => issue.id));
+        const known = new Map(
+            [...Object.values(all), inProgress]
+                .flatMap((load) => (load?.kind === "ready" ? load.issues : []))
+                .map((issue) => [issue.id, issue]),
+        );
         const issues = state?.kind === "ready" ? state.issues : [];
         const blocked = new Set(
             all.blocked?.kind === "ready"
                 ? all.blocked.issues.map((issue) => issue.id)
                 : [],
         );
-        const idWidth = columnWidth(
-            [...pinned, ...issues],
-            (issue) => issue.id,
-        );
-        const typeWidth = columnWidth(
-            [...pinned, ...issues],
-            (issue) => issue.issue_type,
-        );
+        const placed = layOut(issues, known);
+        const drawn = [...pinned, ...placed.map(({ issue }) => issue)];
+        const idWidth = columnWidth(drawn, (issue) => issue.id);
+        const typeWidth = columnWidth(drawn, (issue) => issue.issue_type);
         const empty =
             FILTERS.find((one) => one.filter === chosen)?.empty ?? "No issues.";
 
-        /** The status mark and priority of `issue`, in bd's colors, both dim when it is closed. */
-        const drawMark = (issue: Issue) => {
-            const isClosed = issue.status === "closed";
-
+        /** The status mark and priority of `issue`, in bd's colors, both dim when it is closed or `isClosed` says so. */
+        const drawMark = (
+            issue: Issue,
+            isClosed = issue.status === "closed",
+        ) => {
             return (
                 <Text mono dimColor={isClosed}>
                     <Text color={STATUS_COLORS[statusOf(issue, blocked)]}>
@@ -587,12 +661,16 @@ export const register: Register = (on) => {
         );
 
         /** The card of `issue`, drawn under its row while it is the open one. */
-        const drawCard = (issue: Issue, load: CardLoad | undefined) => (
+        const drawCard = (
+            issue: Issue,
+            load: CardLoad | undefined,
+            indent: number,
+        ) => (
             <Box
                 key={`details-${issue.id}`}
                 flexDirection="column"
                 gap={1}
-                marginLeft={MARK_WIDTH}
+                marginLeft={MARK_WIDTH + indent}
                 borderStyle="round"
                 borderColor="subtle"
                 backgroundColor={
@@ -708,12 +786,20 @@ export const register: Register = (on) => {
 
         /**
          * The row of `issue` in the columns of the list: mark and priority, id, type, title, and before the title of an epic its closed children of all, as `(7/10)`.
+         * The row is led by `guide`, the tree lines that tie it to its epic, and drawn dim when it is closed or only gives context, as `isContext` says.
          * Under it comes its card while it is the open one and `hasCard` is set, so an issue pinned atop the pane draws its card there alone.
          * `prefix` keeps the keys of the pinned rows apart from the list's own.
          */
-        const drawRow = (issue: Issue, prefix: string, hasCard: boolean) => {
-            const isClosed = issue.status === "closed";
+        const drawRow = (
+            issue: Issue,
+            prefix: string,
+            hasCard: boolean,
+            guide = "",
+            isContext = false,
+        ) => {
+            const isClosed = issue.status === "closed" || isContext;
             const count = counts[issue.id];
+            const indent = guide.length;
 
             return [
                 <Box
@@ -721,8 +807,15 @@ export const register: Register = (on) => {
                     flexDirection="row"
                     alignItems="flex-start"
                 >
+                    {indent === 0 ? null : (
+                        <Box width={indent} flexShrink={0}>
+                            <Text mono dimColor>
+                                {guide}
+                            </Text>
+                        </Box>
+                    )}
                     <Box width={MARK_WIDTH} flexShrink={0}>
-                        {drawMark(issue)}
+                        {drawMark(issue, isClosed)}
                     </Box>
                     <Box width={idWidth} flexShrink={0}>
                         <Button
@@ -767,7 +860,7 @@ export const register: Register = (on) => {
                     </Box>
                 </Box>,
                 ...(hasCard && opened === issue.id
-                    ? [drawCard(issue, card)]
+                    ? [drawCard(issue, card, indent)]
                     : []),
             ];
         };
@@ -835,8 +928,14 @@ export const register: Register = (on) => {
                     <Text dimColor>{empty}</Text>
                 ) : (
                     <Box flexDirection="column" rowGap="xs">
-                        {state.issues.flatMap((issue) =>
-                            drawRow(issue, "", !isPinned.has(issue.id)),
+                        {placed.flatMap(({ issue, guide, isContext }) =>
+                            drawRow(
+                                issue,
+                                "",
+                                !isPinned.has(issue.id),
+                                guide,
+                                isContext,
+                            ),
                         )}
                     </Box>
                 )}

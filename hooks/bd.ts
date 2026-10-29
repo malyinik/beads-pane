@@ -295,6 +295,7 @@ function issueOf(entry: unknown): Issue | undefined {
         ...(typeof entry.closed_at === "string"
             ? { closed_at: entry.closed_at }
             : {}),
+        ...(typeof entry.parent === "string" ? { parent: entry.parent } : {}),
     };
 }
 
