@@ -396,6 +396,14 @@ function startPrompt(issue: Issue): string {
 }
 
 /**
+ * The prompt a card's close button drafts: the issue's id and title, and the request to check that its work is done, then close it with a reason.
+ * The agent closes it, since only it can tell whether the work is done.
+ */
+function closePrompt(issue: Issue): string {
+    return `Close beads issue ${issue.id}: ${issue.title}\nCheck that its work is done, then close it with \`bd close ${issue.id} --reason "<what was done>"\`. If anything is left, tell me what instead of closing it.`;
+}
+
+/**
  * The prompt the button that asks for the next issue drafts: the request to pick, of the issues `bd ready` lists, the one that fits best with the session's work, say which and why, then claim and read it.
  * The agent picks, since only it knows what the session has been doing.
  */
@@ -604,7 +612,12 @@ export const register: Register = (on) => {
                         ...(issue.status === "closed"
                             ? []
                             : [
-                                  <Box key="actions" flexDirection="row">
+                                  <Box
+                                      key="actions"
+                                      flexDirection="row"
+                                      flexWrap="wrap"
+                                      gap={1}
+                                  >
                                       <Button
                                           key={`start-${issue.id}`}
                                           label="Ask the agent to take this issue…"
@@ -615,6 +628,19 @@ export const register: Register = (on) => {
                                                   $,
                                                   startPrompt(issue),
                                                   `start ${issue.id}`,
+                                              );
+                                          }}
+                                      />
+                                      <Button
+                                          key={`close-${issue.id}`}
+                                          label="Ask the agent to close this issue…"
+                                          hotkey="x"
+                                          variant="secondary"
+                                          onPress={() => {
+                                              void draft(
+                                                  $,
+                                                  closePrompt(issue),
+                                                  `close ${issue.id}`,
                                               );
                                           }}
                                       />

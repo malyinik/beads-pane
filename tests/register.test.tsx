@@ -1157,6 +1157,25 @@ test("a draft the prompt box refuses says so", async ($, on) => {
     await ui.unmount();
 });
 
+test("the close button on a card drafts the request to check the issue's work is done and close it with a reason", async ($, on) => {
+    const shown = toasts(on);
+    const { bd, ui } = await opened($, on, ran(0, SHOWN));
+
+    await ui.press({ key: "card-bp-1.10" });
+    await ui.press({ key: "close-bp-1.10" });
+    expect(bd.fills).toEqual([
+        {
+            text: 'Close beads issue bp-1.10: Second\nCheck that its work is done, then close it with `bd close bp-1.10 --reason "<what was done>"`. If anything is left, tell me what instead of closing it.',
+            mode: "replace",
+        },
+    ]);
+    expect(shown).toEqual([
+        "Drafted the request to close bp-1.10 in the prompt box",
+    ]);
+    expect(bd.argvs.some((argv) => argv[1] === "close")).toBe(false);
+    await ui.unmount();
+});
+
 test("the next issue button drafts the request to pick the ready issue that fits the session and take it", async ($, on) => {
     const shown = toasts(on);
     const { bd, ui } = await opened($, on, ran(0, SHOWN));
@@ -1172,7 +1191,7 @@ test("the next issue button drafts the request to pick the ready issue that fits
     await ui.unmount();
 });
 
-test("a closed issue's card has no take button", async ($, on) => {
+test("a closed issue's card has no take or close button", async ($, on) => {
     const bd = engine(on, {
         list: ran(
             0,
@@ -1203,6 +1222,7 @@ test("a closed issue's card has no take button", async ($, on) => {
     await ui.press({ key: "card-bp-3" });
     expect(await ui.find({ key: "details-bp-3" })).toBeDefined();
     expect(await ui.find({ key: "start-bp-3" })).toBeUndefined();
+    expect(await ui.find({ key: "close-bp-3" })).toBeUndefined();
     await ui.unmount();
 });
 

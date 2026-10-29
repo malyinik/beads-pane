@@ -76,6 +76,7 @@ Before reporting such a change as done, check the list against the code it touch
 - Card
   - A facts line: status, owner, assignee, labels, created and updated days, closing day and reason.
   - `Ask the agent to take this issue…` (hotkey `s`), on an issue that is not closed, drafts in the prompt box a request to claim the issue and read it.
+  - `Ask the agent to close this issue…` (hotkey `x`), on an issue that is not closed, drafts in the prompt box a request to check that the issue's work is done, then close it with a reason; the pane itself never changes an issue.
   - The sections `Description`, `Design`, `Acceptance criteria` and `Notes`, each only when it has text.
   - Linked issues grouped as `Parent`, `Depends on`, `Blocks`, `Children` and `Related`; `Children` carries the epic's progress, as `3/10 complete (30%)`.
   - `Comments`, oldest first, each with its author and day.
