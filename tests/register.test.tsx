@@ -1,5 +1,5 @@
 import { expect, mock, test } from "claude-code/testing";
-import type { On } from "claude-code";
+import type { On, PromptFillMode } from "claude-code";
 import type { Engine as Kit, Mounted } from "claude-code/testing";
 
 const SURFACES = ["terminal", "desktop"] as const;
@@ -85,9 +85,15 @@ function ran(exitCode: number, stdout: string, stderr = "") {
 /** How a hook standing for the engine answers one bd run. */
 type Answer = ReturnType<typeof ran> | { deny: string };
 
-/** The engine standing beneath the plugin: the bd runs it saw, a way to let background reads finish, and the clock a held answer sleeps on. */
+/**
+ * The engine standing beneath the plugin: the bd runs it saw, the prompt box and the drafts put in it, a way to let background reads finish, and the clock a held answer sleeps on.
+ * `isRefusing` set makes the box refuse every draft after.
+ */
 type Engine = {
     argvs: string[][];
+    box: string;
+    fills: { text: string; mode: PromptFillMode }[];
+    isRefusing: boolean;
     settle: () => Promise<void>;
     clock: ReturnType<typeof mock.clock>;
 };
@@ -95,8 +101,8 @@ type Engine = {
 /**
  * Answers the engine calls `/beads-pane` makes, with `bd` answered by subcommand from `runs`.
  * A `{ deny }` answer makes that run reject, as when bd cannot start, and a function answers when its promise settles.
- * Answers `ui.panes` with the panes `ui.open` was asked for, the end of a turn with its answer, the working directory with `/repo`, and `fs.read` from `files`, a path missing there being refused.
- * Returns the argument vectors bd was run with, `settle`, which waits out the reads the command left running, and the mocked clock.
+ * Answers `ui.panes` with the panes `ui.open` was asked for, the end of a turn with its answer, the working directory with `/repo`, `fs.read` from `files`, a path missing there being refused, and the prompt box from `box`, which a draft replaces or extends.
+ * Returns the argument vectors bd was run with, the prompt box and its drafts, `settle`, which waits out the reads the command left running, and the mocked clock.
  */
 function engine(
     on: On,
@@ -106,6 +112,14 @@ function engine(
     const argvs: string[][] = [];
     const panes: string[] = [];
     const clock = mock.clock(on);
+    const kit: Engine = {
+        argvs,
+        box: "",
+        fills: [],
+        isRefusing: false,
+        settle: () => clock.settle(),
+        clock,
+    };
     on("command.register", (_, e) => ({ value: { command: e.name } }));
     on("ui.open", (_, e) => {
         panes.push(e.id);
@@ -124,6 +138,18 @@ function engine(
     on("session.start", (_, e) => ({ cwd: e.cwd }));
     on("turn.complete", (_, e) => ({ text: e.answer }));
     on("session.cwd", () => ({ value: "/repo" }));
+    on("prompt.read", () => ({
+        value: { text: kit.box, cursor: kit.box.length },
+    }));
+    on("prompt.fill", (_, e) => {
+        if (kit.isRefusing) {
+            return { isFilled: false };
+        }
+        kit.fills.push({ text: e.text, mode: e.mode });
+        kit.box = e.mode === "append" ? kit.box + e.text : e.text;
+
+        return { isFilled: true };
+    });
     on("fs.read", (_, e) => {
         const text = files[e.path];
 
@@ -141,7 +167,7 @@ function engine(
         return answer ?? ran(1, "", `Error: unexpected ${e.argv.join(" ")}`);
     });
 
-    return { argvs, settle: () => clock.settle(), clock };
+    return kit;
 }
 
 test("/beads-pane is registered and opens the pane", async ($, on) => {
@@ -1051,6 +1077,93 @@ test("a card bd cannot read says why", async ($, on) => {
     expect((await ui.find({ key: "details-bp-1.10" }))?.text).toBe(
         'bd failed: Error fetching bp-1.10: no issue found matching "bp-1.10"',
     );
+    await ui.unmount();
+});
+
+/** Collects the texts of the toasts the plugin shows. */
+function toasts(on: On): string[] {
+    const shown: string[] = [];
+    on("ui.toast", (_, e) => {
+        shown.push(e.text);
+
+        return { value: undefined };
+    });
+
+    return shown;
+}
+
+/** The draft a card's take button puts in the prompt box for `bp-1.10`. */
+const START_DRAFT =
+    "Take beads issue bp-1.10 into work: Second\nClaim it with `bd update bp-1.10 --claim` and read it with `bd show bp-1.10`.";
+
+test("the take button on a card drafts the request to claim and read the issue in the empty prompt box", async ($, on) => {
+    const shown = toasts(on);
+    const { bd, ui } = await opened($, on, ran(0, SHOWN));
+
+    await ui.press({ key: "card-bp-1.10" });
+    await ui.press({ key: "start-bp-1.10" });
+    expect(bd.fills).toEqual([{ text: START_DRAFT, mode: "replace" }]);
+    expect(shown).toEqual([
+        "Drafted the request to start bp-1.10 in the prompt box",
+    ]);
+    await ui.unmount();
+});
+
+test("the take button keeps what the prompt box holds and drafts after a blank line", async ($, on) => {
+    toasts(on);
+    const { bd, ui } = await opened($, on, ran(0, SHOWN));
+    bd.box = "my own words";
+
+    await ui.press({ key: "card-bp-1.10" });
+    await ui.press({ key: "start-bp-1.10" });
+    expect(bd.box).toBe(`my own words\n\n${START_DRAFT}`);
+    await ui.unmount();
+});
+
+test("a draft the prompt box refuses says so", async ($, on) => {
+    const shown = toasts(on);
+    const { bd, ui } = await opened($, on, ran(0, SHOWN));
+    bd.isRefusing = true;
+
+    await ui.press({ key: "card-bp-1.10" });
+    await ui.press({ key: "start-bp-1.10" });
+    expect(shown).toEqual([
+        "Could not draft the request to start bp-1.10: the prompt box refused it",
+    ]);
+    await ui.unmount();
+});
+
+test("a closed issue's card has no take button", async ($, on) => {
+    const bd = engine(on, {
+        list: ran(
+            0,
+            JSON.stringify([
+                {
+                    id: "bp-3",
+                    title: "Done",
+                    status: "closed",
+                    priority: 2,
+                    issue_type: "task",
+                    closed_at: "2026-10-28T10:00:00Z",
+                },
+            ]),
+        ),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+        show: ran(0, SHOWN),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await $.command.run(TYPED);
+    await bd.settle();
+    const ui = await $.ui.mount({ ...PANE, surface: "desktop" });
+
+    await ui.press({ key: "card-bp-3" });
+    expect(await ui.find({ key: "details-bp-3" })).toBeDefined();
+    expect(await ui.find({ key: "start-bp-3" })).toBeUndefined();
     await ui.unmount();
 });
 

@@ -8,6 +8,7 @@ The terminal (`terminal` surface) runs the same code.
 > **Status:** early development.
 > The `/beads-pane` command opens the pane and lists issues, filtered by `ready`, `blocked`, `open`, `closed` or `all`.
 > Pressing an issue's title opens its card: description, notes, linked issues and comments.
+> The card's `Ask the agent to take this issue…` button drafts a request to the agent, in the prompt box, to claim the issue and read it.
 > While the pane is open, it is read again on its `Refresh` button, and after each agent turn or `bd` command the agent runs when the beads database changed.
 
 ## Requirements

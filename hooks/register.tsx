@@ -367,6 +367,41 @@ async function copyId(
     );
 }
 
+/** The prompt a card's take button drafts: the issue's id and title, and the request to claim it and read it. */
+function startPrompt(issue: Issue): string {
+    return `Take beads issue ${issue.id} into work: ${issue.title}\nClaim it with \`bd update ${issue.id} --claim\` and read it with \`bd show ${issue.id}\`.`;
+}
+
+/**
+ * Drafts {@link startPrompt} for `issue` in the prompt box, for the person to edit and send, and says how that went in a toast.
+ * An empty box takes the draft whole, and a box holding text keeps it, with the draft after a blank line.
+ */
+async function start($: EngineInterface, issue: Issue): Promise<void> {
+    const text = startPrompt(issue);
+    const box = await $.prompt.read();
+    const filled = await $.prompt
+        .fill(
+            box.text.trim() === ""
+                ? { text, mode: "replace" }
+                : { text: `\n\n${text}`, mode: "append" },
+        )
+        .catch(() => ({ isFilled: false, refusal: undefined }));
+    $.ui.toast(
+        filled.isFilled
+            ? `Drafted the request to start ${issue.id} in the prompt box`
+            : `Could not draft the request to start ${issue.id}: ${FILL_FAILURES[filled.refusal ?? "refused"]}`,
+    );
+}
+
+/** What the toast says for each reason the prompt box did not take a draft. */
+const FILL_FAILURES: Readonly<
+    Record<"no_composer" | "dialog" | "refused", string>
+> = {
+    no_composer: "this session has no prompt box",
+    dialog: "a dialog holds the keys",
+    refused: "the prompt box refused it",
+};
+
 /**
  * Registers the `/beads-pane` command and draws the beads pane.
  * The pane opens only on the command, never unasked at session start.
@@ -523,6 +558,21 @@ export const register: Register = (on) => {
                         <Text key="facts" dimColor>
                             {factsOf(issue, load.card, blocked)}
                         </Text>,
+                        ...(issue.status === "closed"
+                            ? []
+                            : [
+                                  <Box key="actions" flexDirection="row">
+                                      <Button
+                                          key={`start-${issue.id}`}
+                                          label="Ask the agent to take this issue…"
+                                          hotkey="s"
+                                          variant="secondary"
+                                          onPress={() => {
+                                              void start($, issue);
+                                          }}
+                                      />
+                                  </Box>,
+                              ]),
                         ...TEXTS.filter(
                             ({ field }) => load.card[field] !== "",
                         ).map(({ field, heading }) => (

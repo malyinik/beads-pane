@@ -34,8 +34,9 @@ npx -y -p typescript@5.6.3 tsc -p .
 - The desktop draws a Button's `label` in place of its children, so a Button that shows its own children takes no `label`.
 - A `Space` number is whole cells on every surface. A step (`xs`, `sm`, ...) is sized by each surface, and the terminal draws `xs` and `sm` down as zero rows.
 - In tests, `$.command.run` does not wait for work the command left running; the `engine()` helper returns `settle`, backed by `mock.clock`.
-- In tests, `on(event)` takes one hook per event, so the `engine()` helper answers `process.run` for every bd subcommand, `ui.panes` from the panes it opened, `turn.complete`, `session.cwd` and `fs.read`.
-- In tests, `turn.complete` is answered with its own result, `{ text }`, while `ui.open` and `ui.panes` take `{ value }`.
+- In tests, `on(event)` takes one hook per event, so the `engine()` helper answers `process.run` for every bd subcommand, `ui.panes` from the panes it opened, `turn.complete`, `session.cwd`, `fs.read`, `prompt.read` and `prompt.fill`.
+- In tests, `turn.complete` and `prompt.fill` are answered with their own results, `{ text }` and `{ isFilled }`, while `ui.open`, `ui.panes` and `prompt.read` take `{ value }`.
+- In tests, a `prompt.fill` refusal carries no `refusal` cause: the engine strips the cause a hook writes itself.
 
 ## bd quirks
 
@@ -81,6 +82,8 @@ Before reporting such a change as done, check the list against the code it touch
 - Card
   - Read with one `bd show <id> --json --include-dependents --include-comments` each time it opens; the last read is kept in `beads-pane.cards` and drawn meanwhile, the open id in `beads-pane.expanded`.
   - A facts line: status, owner (the `created_by` actor, as `bd show` prints it), assignee, labels, created and updated days, closing day and reason.
+  - Under the facts line of an issue that is not closed, a `Ask the agent to take this issue…` button (hotkey `s`) drafts a prompt in the prompt box through `$.prompt.fill`, for the person to edit and send: the id and title, and the request to claim the issue with `bd update <id> --claim` and read it with `bd show <id>`.
+  - An empty prompt box takes the draft whole; one holding text keeps it, with the draft after a blank line. A toast says whether the box took the draft.
   - Markdown sections `Description`, `Design`, `Acceptance criteria` and `Notes`, each only when bd has text for it.
   - Linked issues in the columns of a list row (status mark and priority, id, title), with one id width across the card, grouped as `Parent`, `Depends on`, `Blocks`, `Children` and `Related`; a group without issues is left out.
   - `Children` carries the epic's progress as bd prints it, `3/10 complete (30%)`.
