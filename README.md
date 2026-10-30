@@ -1,5 +1,10 @@
 # beads-pane
 
+[![Claude Code 2.1.312 mod](https://img.shields.io/badge/Claude%20Code-2.1.312%20mod-D97757?logo=claude&logoColor=white)](https://code.claude.com/docs/en/plugins/mods/overview)
+[![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmalyinik%2Fbeads-pane%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=orange)](https://github.com/malyinik/beads-pane/releases)
+[![Check](https://github.com/malyinik/beads-pane/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/malyinik/beads-pane/actions/workflows/check.yml)
+[![license](https://img.shields.io/github/license/malyinik/beads-pane)](LICENSE)
+
 A Claude Code plugin that shows [beads](https://github.com/steveyegge/beads) (`bd`) issues in a side pane next to the chat.
 
 The main target is the Claude Code desktop app (`desktop` surface).
