@@ -13,6 +13,7 @@ It is developed against Claude Code 2.1.312 and bd 1.2.2.
 | `types/index.d.ts`        | The state contract (`PluginState["beads-pane"]`) and the shared types                             |
 | `tests/register.test.tsx` | Tests on `claude-code/testing`                                                                    |
 | `.claude-plugin/`         | `plugin.json` and `marketplace.json`; `types/` inside it is written by the engine and git-ignored |
+| `.github/workflows/`      | `check.yml`, the CI run of the checks                                                             |
 
 ## Checks
 
@@ -25,6 +26,9 @@ npx -y -p typescript@5.6.3 tsc -p .
 ```
 
 `tsc` needs `.claude-plugin/types/`, which the engine writes once the plugin has loaded in a signed-in session.
+
+`.github/workflows/check.yml` runs `validate` and `test` on pushes and pull requests to `develop` and `main`, pinned to Claude Code 2.1.312, and weekly on the latest Claude Code.
+`tsc` is left to local runs, since CI has no signed-in session to write the types.
 
 ## Engine quirks
 

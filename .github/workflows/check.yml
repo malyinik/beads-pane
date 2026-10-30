@@ -1,0 +1,40 @@
+name: Check
+
+on:
+    push:
+        branches: [develop, main]
+    pull_request:
+        branches: [develop, main]
+    schedule:
+        # Weekly, on the latest Claude Code, to notice changes in the plugin API early.
+        - cron: "0 6 * * 1"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    check:
+        runs-on: ubuntu-latest
+        env:
+            # The version the plugin is developed against; the scheduled run takes the latest one.
+            CLAUDE_CODE_VERSION: ${{ github.event_name == 'schedule' && 'latest' || '2.1.312' }}
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+
+            - name: Install Claude Code ${{ env.CLAUDE_CODE_VERSION }}
+              run: npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+            - name: Validate the plugin
+              run: claude plugin validate .
+
+            - name: Run the tests
+              run: claude plugin test .

@@ -75,6 +75,8 @@ Run the tests in `tests/`:
 claude plugin test ~/beads-pane
 ```
 
+GitHub Actions runs `claude plugin validate` and `claude plugin test` on every push and pull request to `develop` and `main`.
+
 Type-check, once the plugin has loaded and Claude Code has written its types to `.claude-plugin/types/`:
 
 ```bash
