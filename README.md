@@ -5,6 +5,10 @@ A Claude Code plugin that shows [beads](https://github.com/steveyegge/beads) (`b
 The main target is the Claude Code desktop app (`desktop` surface).
 The terminal (`terminal` surface) runs the same code.
 
+![The pane in the desktop app, beside the chat: the issues in progress atop, the filters, and the open issues under their epics](docs/list.png)
+
+![An issue's card opened under its row: its facts, texts, linked issues and comments](docs/card.png)
+
 ## Features
 
 - The issues of the session's beads database, in a side pane opened by `/beads-pane`.
