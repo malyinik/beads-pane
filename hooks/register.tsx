@@ -394,14 +394,14 @@ const LINKS: readonly {
 ];
 
 /**
- * The line of facts atop a card: status, assignee, labels, then the creation, last change and closing days.
+ * The facts atop a card: status, assignee, labels, then the creation, last change and closing days.
  * A fact bd leaves empty is left out.
  */
 function factsOf(
     issue: Issue,
     card: Card,
     blocked: ReadonlySet<string>,
-): string {
+): string[] {
     const closed =
         issue.closed_at === undefined
             ? ""
@@ -415,9 +415,7 @@ function factsOf(
         card.created_at === "" ? "" : `created ${dayOf(card.created_at)}`,
         card.updated_at === "" ? "" : `updated ${dayOf(card.updated_at)}`,
         closed,
-    ]
-        .filter((fact) => fact !== "")
-        .join(" · ");
+    ].filter((fact) => fact !== "");
 }
 
 /** How many of an epic's `children` are closed, as bd's `3/10 complete (30%)`. */
@@ -703,9 +701,28 @@ export const register: Register = (on) => {
                     <Text color="error">bd failed: {load.message}</Text>
                 ) : (
                     [
-                        <Text key="facts" dimColor>
-                            {factsOf(issue, load.card, blocked)}
-                        </Text>,
+                        // Each fact goes with the dot after it as one item, so a narrow card wraps between facts, never inside a day, and a wrapped line ends with the dot.
+                        <Box
+                            key="facts"
+                            flexDirection="row"
+                            flexWrap="wrap"
+                            columnGap={1}
+                        >
+                            {factsOf(issue, load.card, blocked).map(
+                                (fact, index, all) => (
+                                    <Box
+                                        key={`fact-${index}`}
+                                        flexDirection="row"
+                                        columnGap={1}
+                                    >
+                                        <Text dimColor>{fact}</Text>
+                                        {index === all.length - 1 ? null : (
+                                            <Text dimColor>·</Text>
+                                        )}
+                                    </Box>
+                                ),
+                            )}
+                        </Box>,
                         ...(issue.status === "closed"
                             ? []
                             : [

@@ -1024,14 +1024,28 @@ test("pressing a title opens its card under the row with one bd show", async ($,
                 .map((box) => box.key ?? "")
                 .filter((key) => /^(issue|details)-/.test(key)),
         ).toEqual(["issue-bp-1", "issue-bp-1.10", "details-bp-1.10"]);
+        const facts = await ui.find({ key: "facts" });
+        expect(facts?.props).toMatchObject({
+            flexDirection: "row",
+            flexWrap: "wrap",
+        });
+        const parts = [
+            "in progress",
+            "owner carol",
+            "assignee bob",
+            "labels core, ui",
+            "created 2026-10-20",
+            "updated 2026-10-28",
+        ];
         expect(
-            (
-                await exactText(
-                    ui,
-                    "in progress · owner carol · assignee bob · labels core, ui · created 2026-10-20 · updated 2026-10-28",
-                )
-            )?.props.dimColor,
-        ).toBe(true);
+            (await ui.findAll({ type: "Box" }))
+                .filter((box) => box.key?.startsWith("fact-"))
+                .map((box) => box.text),
+        ).toEqual([...parts.slice(0, -1).map((part) => `${part}·`), parts[5]]);
+        expect(facts?.text).toBe(parts.join("·"));
+        for (const part of [...parts, "·"]) {
+            expect((await exactText(ui, part))?.props.dimColor).toBe(true);
+        }
         expect(
             (await ui.findAll({ type: "Markdown" })).map(
                 (one) => one.props.text,
