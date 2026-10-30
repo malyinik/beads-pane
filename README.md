@@ -5,17 +5,15 @@ A Claude Code plugin that shows [beads](https://github.com/steveyegge/beads) (`b
 The main target is the Claude Code desktop app (`desktop` surface).
 The terminal (`terminal` surface) runs the same code.
 
-> **Status:** early development.
-> The `/beads-pane` command opens the pane and lists issues, filtered by `ready`, `blocked`, `open`, `deferred`, `closed` or `all`.
-> Each filter button counts its issues, and the issues in progress stay pinned atop the pane whatever the filter.
-> An open epic's row shows how many of its children are closed, as `(7/10)` before its title.
-> An epic ready to close, every child of it closed, is marked with a green `◉`.
-> The issues of an epic stand under it in the list, tied to it by tree lines.
-> Pressing an issue's title opens its card: description, notes, linked issues and comments.
-> The card's `Ask the agent to take this issue…` button drafts a request to the agent, in the prompt box, to claim the issue and read it.
-> Its `Ask the agent to close this issue…` button drafts a request to check that the issue's work is done and close it.
-> The `Ask the agent to pick the next issue…` button drafts a request to pick the ready issue that fits the session's work best and take it.
-> While the pane is open, it is read again on its `Refresh` button, and after each agent turn or `bd` command the agent runs when the beads database changed.
+## Features
+
+- The issues of the session's beads database, in a side pane opened by `/beads-pane`.
+- Filters: ready, blocked, open, deferred, closed and all.
+- The issues in progress, always in view.
+- Epics with their issues and progress.
+- An issue's card: its texts, linked issues and comments.
+- Buttons that ask the agent to pick the next issue, take one or close one. The pane itself never changes an issue.
+- Updates as the agent works with bd.
 
 ## Requirements
 
@@ -28,7 +26,7 @@ The pane reads the beads database of the session's working directory.
 
 ## Install
 
-At the prompt of a Claude Code terminal session:
+At the prompt of a Claude Code session, in the terminal or the desktop app:
 
 ```
 /plugin install beads-pane --marketplace malyinik/beads-pane
@@ -39,12 +37,6 @@ From a shell:
 ```bash
 claude plugin install beads-pane --marketplace malyinik/beads-pane
 ```
-
-In the desktop app, where `/plugin` does not run:
-
-1. Click **+** next to the prompt box, then **Plugins**.
-2. Choose **Add marketplace** and enter `malyinik/beads-pane`.
-3. Choose **Add plugin**.
 
 ## Usage
 
