@@ -150,6 +150,19 @@ export async function fetchVersion(
         : await $.fs.read(manifest).catch(() => undefined);
 }
 
+/**
+ * Whether bd finds a beads database for the session's working directory.
+ * Never rejects: a bd that fails or cannot start counts as no database.
+ */
+export async function hasDatabase($: EngineInterface): Promise<boolean> {
+    const where = await $.process.run(WHERE).catch(() => undefined);
+
+    return (
+        where?.exitCode === 0 &&
+        typeof recordOf(where.stdout)?.path === "string"
+    );
+}
+
 /** Where {@link locateManifest} last found the `manifest`, and the working directory it was asked from. */
 let located: { cwd: string; manifest: string } | undefined;
 

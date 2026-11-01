@@ -17,6 +17,7 @@ The terminal (`terminal` surface) runs the same code.
 ## Features
 
 - The issues of the session's beads database, in a side pane opened by `/beads-pane`.
+- A `Beads` toggle in the prompt footer of every session with a beads database.
 - Filters: ready, blocked, open, deferred, closed and all.
 - The issues in progress, always in view.
 - Epics with their issues and progress.
@@ -52,6 +53,8 @@ claude plugin install beads-pane --marketplace malyinik/beads-pane
 | Command       | What it does         |
 | ------------- | -------------------- |
 | `/beads-pane` | Opens the beads pane |
+
+In a folder with a beads database, `Beads` at the right of the prompt footer opens the pane when it is closed and closes it when it is open.
 
 ## Development
 

@@ -63,6 +63,7 @@ Any change that adds, changes or removes behaviour updates this list in the same
 Before reporting such a change as done, check the list against the code it touched.
 
 - `/beads-pane` opens the pane; nothing opens it at session start.
+- In a folder with a beads database, `Beads` at the right of the prompt footer opens the pane when it is closed and closes it when it is open.
 - `In progress`, atop the pane, keeps the issues in progress in view whatever the filter, and is left out while there are none.
 - Filters
   - Buttons `Ready`, `Blocked`, `Open`, `Deferred`, `Closed` and `All`, with the hotkeys `r`, `b`, `o`, `d`, `c` and `a`; `Open` is the default, and the choice outlives a reload of the plugin.

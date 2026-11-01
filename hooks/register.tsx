@@ -1,8 +1,19 @@
 import { atom, read, update } from "claude-code";
-import type { EngineInterface, Register, RenderSurface } from "claude-code";
+import type {
+    EngineInterface,
+    Register,
+    RenderSurface,
+    UiOpenResult,
+} from "claude-code";
 
 import type { Card, CardLoad, Filter, Issue, Load } from "../types";
-import { fetchCard, fetchLoad, fetchProgress, fetchVersion } from "./bd";
+import {
+    fetchCard,
+    fetchLoad,
+    fetchProgress,
+    fetchVersion,
+    hasDatabase,
+} from "./bd";
 
 /** Id of the side pane, shared by `$.ui.open` and the `Pane` render hook. */
 export const PANE = "beads";
@@ -51,6 +62,13 @@ const progress = atom(
     { plugin: "beads-pane", key: "progress" } as const,
     {},
     { shape: "progress-2" },
+);
+
+/** Whether the session's working directory has a beads database, which shows the pane's toggle in the prompt footer. */
+const hasBeads = atom(
+    { plugin: "beads-pane", key: "hasDatabase" } as const,
+    false,
+    { shape: "has-database-1" },
 );
 
 /** The filter switch above the list, in the order its buttons are drawn. */
@@ -228,6 +246,31 @@ function reload($: EngineInterface): Promise<void> {
     });
 
     return reloading;
+}
+
+/**
+ * Opens the pane, then reads the chosen filter from bd again, and the issues in progress, the epics' progress and the other filters in the background.
+ * @returns whether a surface draws the pane now, and why not when none does
+ */
+async function openPane($: EngineInterface): Promise<UiOpenResult> {
+    const opened = await $.ui.open({ id: PANE, title: TITLE });
+    const chosen = await read($, filter);
+    const loaded = await refresh($, chosen);
+    if (loaded.kind === "ready") {
+        await update($, hasBeads, () => true);
+        void refreshOthers($, chosen);
+    }
+
+    return opened;
+}
+
+/** Closes the pane when it is open and opens it otherwise, as the toggle in the prompt footer does. */
+async function togglePane($: EngineInterface): Promise<void> {
+    if ((await $.ui.panes()).some((pane) => pane.id === PANE)) {
+        await $.ui.close({ id: PANE });
+    } else {
+        await openPane($);
+    }
 }
 
 /** The database version the last {@link reloadChanged} read from, `undefined` before its first. */
@@ -524,7 +567,8 @@ const FILL_FAILURES: Readonly<
 
 /**
  * Registers the `/beads-pane` command and draws the beads pane.
- * The pane opens only on the command, never unasked at session start.
+ * The pane opens only on the command or the toggle at the right of the prompt footer, never unasked at session start.
+ * The toggle is drawn once the session's start found a beads database for the working directory.
  * Each run of the command reads the chosen filter from bd again, then the issues in progress, the epics' progress and the other filters in the background.
  * While the pane is open, it is read again on its `Refresh` button, and at the end of each turn of the main loop and after each Bash command that runs bd when bd's database changed.
  */
@@ -534,16 +578,35 @@ export const register: Register = (on) => {
             name: COMMAND,
             description: "Show beads issues in a side pane",
         });
+        const result = await next(e);
+        void hasDatabase($).then((found) => update($, hasBeads, () => found));
 
-        return next(e);
+        return result;
+    });
+
+    on("ui.render", { component: "SessionMode" }, async ($, e, next) => {
+        const modes = await next(e);
+        if (!(await read($, hasBeads))) {
+            return modes;
+        }
+        const { Box, Button } = $.ui.resolve(e);
+
+        return (
+            <Box flexDirection="row" columnGap={1}>
+                {modes}
+                <Button
+                    key="beads-toggle"
+                    label="Beads"
+                    onPress={() => {
+                        void togglePane($);
+                    }}
+                />
+            </Box>
+        );
     });
 
     on("command.run", { command: COMMAND }, async ($) => {
-        const opened = await $.ui.open({ id: PANE, title: TITLE });
-        const chosen = await read($, filter);
-        if ((await refresh($, chosen)).kind === "ready") {
-            void refreshOthers($, chosen);
-        }
+        const opened = await openPane($);
 
         return {
             text: opened.isPlaced

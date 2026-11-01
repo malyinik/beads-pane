@@ -125,6 +125,7 @@ declare module "claude-code" {
             cards: Shaped<Cards>;
             working: Shaped<Load | null>;
             progress: Shaped<Progresses>;
+            hasDatabase: Shaped<boolean>;
         };
     }
 }

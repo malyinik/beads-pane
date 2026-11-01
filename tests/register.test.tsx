@@ -91,6 +91,7 @@ type Answer = ReturnType<typeof ran> | { deny: string };
  */
 type Engine = {
     argvs: string[][];
+    panes: string[];
     box: string;
     fills: { text: string; mode: PromptFillMode }[];
     isRefusing: boolean;
@@ -102,8 +103,9 @@ type Engine = {
  * Answers the engine calls `/beads-pane` makes, with `bd` answered by subcommand from `runs`, but for the listing of the issues in progress, answered from `runs.in_progress`.
  * The issues in progress and `bd epic status` come back empty when `runs` has no answer for them.
  * A `{ deny }` answer makes that run reject, as when bd cannot start, and a function answers when its promise settles.
- * Answers `ui.panes` with the panes `ui.open` was asked for, the end of a turn with its answer, the working directory with `/repo`, `fs.read` from `files`, a path missing there being refused, and the prompt box from `box`, which a draft replaces or extends.
- * Returns the argument vectors bd was run with, the prompt box and its drafts, `settle`, which waits out the reads the command left running, and the mocked clock.
+ * Answers `ui.panes` with the panes `ui.open` was asked for and `ui.close` has not closed since, the end of a turn with its answer, the working directory with `/repo`, `fs.read` from `files`, a path missing there being refused, and the prompt box from `box`, which a draft replaces or extends.
+ * Draws the prompt footer's modes as the engine would, joined by ` & `.
+ * Returns the argument vectors bd was run with, the open panes, the prompt box and its drafts, `settle`, which waits out the reads the command left running, and the mocked clock.
  */
 function engine(
     on: On,
@@ -115,6 +117,7 @@ function engine(
     const clock = mock.clock(on);
     const kit: Engine = {
         argvs,
+        panes,
         box: "",
         fills: [],
         isRefusing: false,
@@ -126,6 +129,16 @@ function engine(
         panes.push(e.id);
 
         return { value: { isPlaced: true } };
+    });
+    on("ui.close", (_, e) => {
+        panes.splice(panes.indexOf(e.id), 1);
+
+        return { value: undefined };
+    });
+    on("ui.render", { component: "SessionMode" }, ($, e) => {
+        const { Text } = $.ui.resolve(e);
+
+        return <Text dimColor>{e.props.modes.join(" & ")}</Text>;
     });
     on("ui.panes", () => ({
         value: panes.map((id) => ({
@@ -228,6 +241,67 @@ test("/beads-pane reports a pane that waits for room", async ($, on) => {
     expect(result.text).toBe("Beads pane is waiting for room: no-surface");
 });
 
+/** The mode labels at the right of the prompt footer, as the engine hands them. */
+const FOOTER = {
+    plugin: "beads-pane",
+    component: "SessionMode",
+    props: { modes: ["focus"] },
+} as const;
+
+/** What `bd where --json` prints when it finds a database. */
+const WORKSPACE = JSON.stringify({
+    path: "/repo/.beads",
+    database_path: "/repo/.beads/embeddeddolt",
+});
+
+test("with a beads database the prompt footer keeps its modes and adds a toggle that opens and closes the pane", async ($, on) => {
+    const bd = engine(on, {
+        where: ran(0, WORKSPACE),
+        list: ran(0, LISTED),
+        ready: ran(0, "[]"),
+        blocked: ran(0, "[]"),
+    });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await bd.settle();
+
+    for (const surface of SURFACES) {
+        const ui = await $.ui.mount({ ...FOOTER, surface });
+        expect((await ui.find({ type: "Box" }))?.text).toContain("focus");
+        expect((await ui.find({ key: "beads-toggle" }))?.props.label).toBe(
+            "Beads",
+        );
+
+        await ui.press({ key: "beads-toggle" });
+        await bd.settle();
+        expect(bd.panes).toEqual(["beads"]);
+
+        await ui.press({ key: "beads-toggle" });
+        await bd.settle();
+        expect(bd.panes).toEqual([]);
+        await ui.unmount();
+    }
+});
+
+test("without a beads database the prompt footer has no toggle", async ($, on) => {
+    const bd = engine(on, { where: ran(1, NO_DATABASE) });
+    await $.session.start({
+        cwd: "/",
+        surface: "desktop",
+        isInteractive: true,
+    });
+    await bd.settle();
+
+    for (const surface of SURFACES) {
+        const ui = await $.ui.mount({ ...FOOTER, surface });
+        expect(await ui.find({ key: "beads-toggle" })).toBeUndefined();
+        await ui.unmount();
+    }
+});
+
 test("the pane draws a placeholder before the first load", async ($) => {
     for (const surface of SURFACES) {
         const ui = await $.ui.mount({ ...PANE, surface });
@@ -277,6 +351,9 @@ const IN_PROGRESS = [
 
 /** The bd command that counts the children of the open epics. */
 const EPICS = ["bd", "epic", "status", "--json"];
+
+/** `bd where`, which the session's start runs to tell whether there is a database, and a reload check while it does not know where the database is. */
+const WHERE = ["bd", "where", "--json"];
 
 test("the pane lists open issues by priority, with status, priority, id, type and title", async ($, on) => {
     const bd = engine(on, {
@@ -431,6 +508,7 @@ test("the command reads the chosen filter first, then the issues in progress, th
     await bd.settle();
 
     expect(bd.argvs).toEqual([
+        WHERE,
         COMMANDS.open,
         IN_PROGRESS,
         EPICS,
@@ -540,6 +618,7 @@ test("each filter runs its own bd command and says when it lists nothing", async
         "No issues.",
     ]);
     expect(bd.argvs).toEqual([
+        WHERE,
         COMMANDS.ready,
         COMMANDS.blocked,
         COMMANDS.open,
@@ -1678,9 +1757,6 @@ const TURN_END = {
     reason: "answer",
 } as const;
 
-/** `bd where`, which a reload check runs while it does not know where the database is. */
-const WHERE = ["bd", "where", "--json"];
-
 /** Every filter read again, the pane's chosen `open` first, then the issues in progress and the epics' progress, as one reload runs them. */
 const RELOAD = [
     COMMANDS.open,
@@ -1727,10 +1803,12 @@ test("no turn end reads bd while the pane is closed, nor a subagent's while it i
         surface: "desktop",
         isInteractive: true,
     });
+    await bd.settle();
+    const started = bd.argvs.length;
 
     await $.turn.complete(TURN_END);
     await bd.settle();
-    expect(bd.argvs).toEqual([]);
+    expect(bd.argvs.slice(started)).toEqual([]);
 
     await $.command.run(TYPED);
     await bd.settle();
